@@ -117,6 +117,7 @@ table.mini td:last-child{text-align:right}
     <button data-tab="ledger" onclick="go('ledger')"><b>📒</b>내역</button>
     <button data-tab="budget" onclick="go('budget')"><b>🎯</b>예산</button>
     <button data-tab="loans" onclick="go('loans')"><b>🏦</b>빚·대출</button>
+    <button data-tab="food" onclick="go('food')"><b>🍚</b>살림</button>
   </nav>
 </div>
 
@@ -226,6 +227,7 @@ function classify(row, rules){
       const sub = /다이소/.test(name)?'다이소':/하나/.test(name)?'하나':/국민|KB/.test(name)?'KB':/신한/.test(name)?'신한':/삼성/.test(name)?'삼성':'기타';
       return R('🚫 카드대금', sub);
     }
+    if(/원리금/.test(name) && /IBK|기업/.test(m)) return R('① 고정비','대출-지아');
     if(/굿네이버스|월드비전|유니세프|세이브더칠드런|기부/.test(name)) return R('① 고정비','기부');
     if(/CLAUDE|ANTHROPIC|네이버플러스|넷플릭스|유튜브|YOUTUBE|쿠팡와우|구독/i.test(name)) return R('① 고정비','구독');
     if(/달러종신|종신/.test(name)) return R('② 보험료','달러종신');
@@ -403,7 +405,8 @@ const SB_URL = 'https://ervuakkqjmegzbqngwzc.supabase.co';
 const SB_KEY = 'sb_publishable_E53HmWOq2-gQrlOBlAmTKg_dcAFO2PV';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
-const S = { tab:'settle', month:'', tx:[], rules:[], budgets:[], loans:[], debtRows:[], settled:null, filter:'all', remember:true, avgIncome:null };
+const S = { tab:'settle', month:'', tx:[], rules:[], budgets:[], loans:[], debtRows:[], settled:null, filter:'all', remember:true, avgIncome:null,
+  fridge:[], meals:[], shop:[], foodTab:'fridge' };
 const $ = id => document.getElementById(id);
 const won = n => (Math.round(n)||0).toLocaleString('ko-KR')+'원';
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -433,15 +436,19 @@ async function setMonth(m){ if(!m) return; S.month=m; await loadAll(); render();
 
 async function loadAll(){
   const m=S.month;
-  const [tx, rules, budgets, loans, debt, st] = await Promise.all([
+  const [tx, rules, budgets, loans, debt, st, fr, me, sh] = await Promise.all([
     sb.from('transactions').select('*').eq('month',m).order('date',{ascending:false}).order('time',{ascending:false}),
     sb.from('rules').select('*'),
     sb.from('budgets').select('*').eq('month',m),
     sb.from('loans').select('*').order('pay_day'),
     sb.from('transactions').select('*').or('treatment.in.(advance,advance_refund,borrow),category.eq."빌린 돈 갚기"'),
     sb.from('settlements').select('*').eq('month',m).maybeSingle(),
+    sb.from('fridge_items').select('*').order('name'),
+    sb.from('meal_plans').select('*').gte('date',m+'-01').lt('date',shiftMonth(m,1)+'-01').order('date'),
+    sb.from('shopping_items').select('*').eq('month',m).order('name'),
   ]);
-  for(const r of [tx,rules,budgets,loans,debt]) if(fail(r.error,'불러오기')) return;
+  for(const r of [tx,rules,budgets,loans,debt,fr,me,sh]) if(fail(r.error,'불러오기')) return;
+  S.fridge=fr.data; S.meals=me.data; S.shop=sh.data;
   S.tx=tx.data; S.rules=rules.data; S.budgets=budgets.data; S.loans=loans.data; S.debtRows=debt.data; S.settled=st.data;
   // 최근 3개월 평균 수입
   const months=[1,2,3].map(k=>shiftMonth(m,-k));
@@ -450,7 +457,7 @@ async function loadAll(){
 }
 
 function go(tab){ S.tab=tab; document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab)); render(); window.scrollTo(0,0); }
-function render(){ ({settle:renderSettle, ledger:renderLedger, budget:renderBudget, loans:renderLoans})[S.tab](); }
+function render(){ ({settle:renderSettle, ledger:renderLedger, budget:renderBudget, loans:renderLoans, food:renderFood})[S.tab](); }
 
 // ── 엑셀 가져오기 ──
 async function importFile(f){
@@ -737,6 +744,181 @@ async function saveLoan(id, field, v){
 async function addLoan(){
   const {error}=await sb.from('loans').insert({name:'새 대출', kind:'사업대출', active:true}); if(fail(error)) return;
   await loadAll(); renderLoans();
+}
+
+// ══════════ 살림: 냉장고 · 식단 · 장보기 ══════════
+const LOCS=['냉장','냉동','실온'];
+const STORES=['트레이더스','홈플러스','롯데마트 제타','기타'];
+const UNITS=['개','팩','봉','병','통','g','kg','줄','판'];
+const todayStr = () => { const d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10); };
+const nkey = s => String(s||'').replace(/\s+/g,'').toLowerCase();
+const have = name => S.fridge.some(f=>(f.qty==null||f.qty>0) && (nkey(f.name).includes(nkey(name)) || nkey(name).includes(nkey(f.name))) && nkey(name).length>0);
+
+function renderFood(){
+  const t=S.foodTab;
+  const tabs=[['fridge','🧊 냉장고'],['meals','🍳 식단'],['shop','🛒 장보기']];
+  $('view').innerHTML = `<div class="chips">${tabs.map(([k,l])=>`<button class="chip ${t===k?'on':''}" onclick="S.foodTab='${k}';renderFood()">${l}</button>`).join('')}</div><div id="foodView"></div>`;
+  ({fridge:renderFridge, meals:renderMeals, shop:renderShop})[t]();
+}
+
+// ── 냉장고 ──
+function renderFridge(){
+  const today=new Date(todayStr());
+  const dleft = d => d ? Math.round((new Date(d)-today)/864e5) : null;
+  const soonN = S.fridge.filter(f=>{const x=dleft(f.expires); return x!=null && x<=3;}).length;
+  $('foodView').innerHTML = `
+    <div class="row between" style="margin-top:12px"><span class="muted">${S.fridge.length}가지 보관 중${soonN?` · <b style="color:var(--red)">기한 임박 ${soonN}개</b>`:''}</span>
+      <button class="btn small primary" onclick="openFridge()">＋ 넣기</button></div>
+    ${LOCS.map(loc=>{ const items=S.fridge.filter(f=>(f.location||'냉장')===loc).sort((a,b)=>(a.expires||'9')<(b.expires||'9')?-1:1);
+      return `<div class="card"><h2>${loc==='냉장'?'🧊':loc==='냉동'?'❄️':'🧺'} ${loc} <span class="muted">${items.length}</span></h2>
+      ${items.map(f=>{ const x=dleft(f.expires);
+        const tag = x==null?'': x<0?`<span class="tag" style="background:var(--red-soft);color:var(--red)">${-x}일 지남</span>`: x<=3?`<span class="tag" style="background:var(--amber-soft);color:var(--amber)">D-${x}</span>`:`<span class="tag">~${f.expires.slice(5).replace('-','/')}</span>`;
+        return `<div class="catline row between"><div style="min-width:0" onclick="openFridge('${f.id}')"><b>${esc(f.name)}</b> ${tag}${f.note?`<div class="muted">${esc(f.note)}</div>`:''}</div>
+          <div class="row" style="gap:4px"><button class="btn small" onclick="fridgeQty('${f.id}',-1)">−</button>
+          <span class="num" style="min-width:48px;text-align:center">${f.qty??''}${esc(f.unit||'')}</span>
+          <button class="btn small" onclick="fridgeQty('${f.id}',1)">＋</button></div></div>`; }).join('') || '<p class="muted">비어 있어요</p>'}
+      </div>`; }).join('')}`;
+}
+function openFridge(id){
+  const f = id ? S.fridge.find(x=>x.id===id) : {name:'',location:'냉장',qty:1,unit:'개',expires:'',note:''};
+  openModal(`<h2>${id?'고치기':'냉장고에 넣기'}</h2>
+    <label class="field">이름<input id="frName" value="${esc(f.name)}" placeholder="예: 닭가슴살"></label>
+    <div class="grid2">
+      <label class="field">위치<select id="frLoc">${LOCS.map(l=>`<option ${f.location===l?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="field">기한<input id="frExp" type="date" value="${f.expires||''}"></label>
+      <label class="field">수량<input id="frQty" inputmode="decimal" value="${f.qty??''}"></label>
+      <label class="field">단위<input id="frUnit" list="unitList" value="${esc(f.unit||'')}"></label>
+    </div>
+    <datalist id="unitList">${UNITS.map(u=>`<option>${u}</option>`).join('')}</datalist>
+    <label class="field">메모<input id="frNote" value="${esc(f.note||'')}" placeholder="예: 1kg 소분, 2팩씩"></label>
+    <div class="row" style="margin-top:14px;gap:8px">${id?`<button class="btn" onclick="delFridge('${id}')">꺼냄(삭제)</button>`:''}<button class="btn" style="flex:1" onclick="closeModal()">취소</button><button class="btn primary" style="flex:1" onclick="saveFridge('${id||''}')">저장</button></div>`);
+  setTimeout(()=>$('frName').focus(),50);
+}
+async function saveFridge(id){
+  const row={name:$('frName').value.trim(), location:$('frLoc').value, expires:$('frExp').value||null,
+    qty:$('frQty').value===''?null:Number($('frQty').value), unit:$('frUnit').value.trim(), note:$('frNote').value.trim(), updated_at:new Date().toISOString()};
+  if(!row.name){ toast('이름을 넣어주세요'); return; }
+  const q = id ? sb.from('fridge_items').update(row).eq('id',id) : sb.from('fridge_items').insert(row);
+  const {error}=await q; if(fail(error)) return;
+  closeModal(); await reloadFood(); toast('저장했어요');
+}
+async function fridgeQty(id, k){
+  const f=S.fridge.find(x=>x.id===id); const q=Math.max(0,(Number(f.qty)||0)+k);
+  if(q===0 && confirm(`${f.name}을(를) 다 먹었나요? 냉장고에서 뺄게요.`)) return delFridge(id,true);
+  const {error}=await sb.from('fridge_items').update({qty:q, updated_at:new Date().toISOString()}).eq('id',id); if(fail(error)) return;
+  f.qty=q; renderFridge();
+}
+async function delFridge(id, silent){
+  if(!silent && !confirm('냉장고에서 뺄까요?')) return;
+  const {error}=await sb.from('fridge_items').delete().eq('id',id); if(fail(error)) return;
+  closeModal(); await reloadFood();
+}
+async function reloadFood(){
+  const m=S.month;
+  const [fr,me,sh]=await Promise.all([
+    sb.from('fridge_items').select('*').order('name'),
+    sb.from('meal_plans').select('*').gte('date',m+'-01').lt('date',shiftMonth(m,1)+'-01').order('date'),
+    sb.from('shopping_items').select('*').eq('month',m).order('name')]);
+  if(fail(fr.error||me.error||sh.error,'불러오기')) return;
+  S.fridge=fr.data; S.meals=me.data; S.shop=sh.data; renderFood();
+}
+
+// ── 식단 ──
+const SLOTS=['아침','저녁'];
+function renderMeals(){
+  const [y,mo]=S.month.split('-').map(Number); const last=new Date(y,mo,0).getDate();
+  const W='일월화수목금토'; const today=todayStr();
+  let html='', week='';
+  for(let d=1; d<=last; d++){
+    const ds=`${S.month}-${String(d).padStart(2,'0')}`; const wd=new Date(y,mo-1,d).getDay();
+    const cells = SLOTS.map(sl=>{ const m=S.meals.find(x=>x.date===ds && x.slot===sl);
+      const miss = m ? (m.ingredients||[]).filter(i=>!have(i)).length : 0;
+      return `<button class="btn small" style="flex:1;text-align:left;min-width:0;${m?'':'color:var(--sub)'}" onclick="openMeal('${ds}','${sl}')">
+        <span class="muted">${sl}</span> ${m?esc(m.menu):'＋'}${m&&miss?` <span class="tag memo">재료 ${miss}</span>`:''}</button>`; }).join('');
+    week += `<div class="row" style="gap:6px;padding:5px 0;${ds===today?'background:var(--accent-soft);border-radius:8px;padding:5px 4px':''}">
+      <span class="num" style="width:58px;font-size:13px;color:${wd===0?'var(--red)':wd===6?'var(--accent)':'var(--sub)'}">${mo}/${d} ${W[wd]}</span>${cells}</div>`;
+    if(wd===6 || d===last){ html+=`<div class="card" style="padding:10px 12px">${week}</div>`; week=''; }
+  }
+  const planned=S.meals.length, missAll=new Set(S.meals.flatMap(m=>(m.ingredients||[]).filter(i=>!have(i))));
+  $('foodView').innerHTML = `<div class="row between" style="margin-top:12px"><span class="muted">${planned}끼 계획됨 · 사야 할 재료 ${missAll.size}가지</span>
+    <button class="btn small" onclick="S.foodTab='shop';renderFood()">장보기로 →</button></div>${html}`;
+}
+function openMeal(date, slot){
+  const m=S.meals.find(x=>x.date===date && x.slot===slot) || {menu:'',ingredients:[]};
+  const ing=(m.ingredients||[]);
+  openModal(`<h2>${date.slice(5).replace('-','/')} ${slot}</h2>
+    <label class="field">메뉴<input id="mlMenu" value="${esc(m.menu||'')}" placeholder="예: 닭가슴살 원팬 볶음밥"></label>
+    <label class="field">재료 (쉼표로 구분)<input id="mlIng" value="${esc(ing.join(', '))}" placeholder="예: 닭가슴살, 양파, 계란"></label>
+    ${ing.length?`<p class="muted">${ing.map(i=>have(i)?`✓ ${esc(i)}`:`<b style="color:var(--accent)">✗ ${esc(i)}</b>`).join(' · ')}</p>`:''}
+    <label class="muted row" style="gap:6px;margin-top:10px"><input type="checkbox" id="mlRepeat"> 이번 달 매주 ${'일월화수목금토'[new Date(date).getDay()]}요일 ${slot}에도 넣기</label>
+    <div class="row" style="margin-top:14px;gap:8px">${m.id?`<button class="btn" onclick="delMeal('${m.id}')">지우기</button>`:''}<button class="btn" style="flex:1" onclick="closeModal()">취소</button><button class="btn primary" style="flex:1" onclick="saveMeal('${date}','${slot}')">저장</button></div>`);
+  setTimeout(()=>$('mlMenu').focus(),50);
+}
+async function saveMeal(date, slot){
+  const menu=$('mlMenu').value.trim(); const ingredients=$('mlIng').value.split(/[,，、]/).map(s=>s.trim()).filter(Boolean);
+  if(!menu){ toast('메뉴를 넣어주세요'); return; }
+  const dates=[date];
+  if($('mlRepeat').checked){ let d=new Date(date); for(;;){ d=new Date(d.getTime()+7*864e5); const s=d.toISOString().slice(0,10); if(!s.startsWith(S.month)) break; dates.push(s); } }
+  for(const ds of dates){
+    const ex=S.meals.find(x=>x.date===ds && x.slot===slot);
+    const q = ex ? sb.from('meal_plans').update({menu,ingredients}).eq('id',ex.id) : sb.from('meal_plans').insert({date:ds,slot,menu,ingredients});
+    const {error}=await q; if(fail(error)) return;
+  }
+  closeModal(); await reloadFood(); toast(dates.length>1?`${dates.length}끼 넣었어요`:'저장했어요');
+}
+async function delMeal(id){ const {error}=await sb.from('meal_plans').delete().eq('id',id); if(fail(error)) return; closeModal(); await reloadFood(); }
+
+// ── 장보기 ──
+function renderShop(){
+  const groups={}; S.shop.forEach(i=>(groups[i.store||'매장 미정'] ||= []).push(i));
+  const order=[...STORES,'매장 미정'].filter(s=>groups[s]);
+  const est=S.shop.reduce((a,i)=>a+(i.est_price||0),0), left=S.shop.filter(i=>!i.checked).length, done=S.shop.filter(i=>i.checked).length;
+  const bud=(S.budgets.find(b=>b.category==='④ 생활비'&&!b.subcategory)||{}).amount;
+  const spent=summarize(S.tx,S.budgets).byCat['④ 생활비']||0;
+  $('foodView').innerHTML = `
+    <div class="card">
+      <div class="row" style="gap:6px"><input id="shName" placeholder="살 것 (예: 두부)" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 10px" onkeydown="if(event.key==='Enter')addShop()">
+        <select id="shStore" style="border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 6px">${STORES.map(s=>`<option>${s}</option>`).join('')}</select>
+        <button class="btn primary small" onclick="addShop()">추가</button></div>
+      <button class="btn" style="width:100%;margin-top:10px" onclick="shopFromMeals()">🍳 식단에서 부족한 재료 자동으로 담기</button>
+      <p class="muted" style="margin:8px 0 0">남은 것 ${left}개 · 예상 ${won(est)}${bud?` · ④ 생활비 예산 ${won(bud)} 중 ${won(spent)} 씀`:''}</p>
+      ${bud && est>bud-spent?`<div class="alert warn">예상 장보기 금액이 남은 생활비 예산(${won(Math.max(0,bud-spent))})보다 많아요</div>`:''}
+    </div>
+    ${order.map(st=>`<div class="card"><h2>${esc(st)}</h2>${groups[st].sort((a,b)=>a.checked-b.checked).map(i=>`
+      <div class="catline row" style="gap:8px;${i.checked?'opacity:.5':''}">
+        <input type="checkbox" ${i.checked?'checked':''} onchange="toggleShop('${i.id}',this.checked)" style="width:20px;height:20px">
+        <span style="flex:1;min-width:0;${i.checked?'text-decoration:line-through':''}">${esc(i.name)}${i.qty?` <span class="muted">${i.qty}${esc(i.unit||'')}</span>`:''}</span>
+        <input inputmode="numeric" placeholder="가격" value="${i.est_price??''}" onchange="saveShop('${i.id}',{est_price:Number(this.value.replace(/[^\\d]/g,''))||null})" style="width:72px;text-align:right;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:4px 6px;font-size:13px">
+        <select onchange="saveShop('${i.id}',{store:this.value})" style="border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:4px;font-size:12px;max-width:84px"><option value="">매장?</option>${STORES.map(s=>`<option ${i.store===s?'selected':''}>${s}</option>`).join('')}</select>
+        <button class="ghost" onclick="delShop('${i.id}')">✕</button></div>`).join('')}</div>`).join('') || '<p class="muted" style="margin-top:16px">목록이 비어 있어요.</p>'}
+    ${done?`<button class="btn primary" style="width:100%;margin-top:14px" onclick="shopToFridge()">✓ 산 것 ${done}개 냉장고로 옮기기</button>`:''}`;
+}
+async function addShop(){
+  const name=$('shName').value.trim(); if(!name) return;
+  const {error}=await sb.from('shopping_items').insert({month:S.month, name, store:$('shStore').value}); if(fail(error)) return;
+  await reloadFood(); setTimeout(()=>$('shName')?.focus(),50);
+}
+async function saveShop(id, patch){ const {error}=await sb.from('shopping_items').update(patch).eq('id',id); if(fail(error)) return; Object.assign(S.shop.find(i=>i.id===id),patch); renderShop(); }
+async function toggleShop(id, v){ await saveShop(id,{checked:v}); }
+async function delShop(id){ const {error}=await sb.from('shopping_items').delete().eq('id',id); if(fail(error)) return; await reloadFood(); }
+async function shopFromMeals(){
+  const need={}; S.meals.forEach(m=>(m.ingredients||[]).forEach(i=>{ if(!have(i)) need[i]=(need[i]||0)+1; }));
+  const already=new Set(S.shop.map(i=>nkey(i.name)));
+  const rows=Object.entries(need).filter(([n])=>!already.has(nkey(n))).map(([name,c])=>({month:S.month, name, note:null, qty:null, store:null}));
+  if(!rows.length){ toast(S.meals.length?'새로 담을 재료가 없어요 (냉장고에 있거나 이미 목록에 있음)':'식단을 먼저 짜주세요'); return; }
+  const {error}=await sb.from('shopping_items').insert(rows.map(({note,...r})=>r)); if(fail(error)) return;
+  await reloadFood(); toast(`재료 ${rows.length}가지를 담았어요. 매장을 골라주세요`);
+}
+async function shopToFridge(){
+  const done=S.shop.filter(i=>i.checked);
+  if(!confirm(`${done.length}개를 냉장고(냉장)로 옮길까요? 위치·기한은 냉장고 탭에서 고칠 수 있어요.`)) return;
+  for(const i of done){
+    const ex=S.fridge.find(f=>nkey(f.name)===nkey(i.name));
+    if(ex) await sb.from('fridge_items').update({qty:(Number(ex.qty)||0)+(Number(i.qty)||1), updated_at:new Date().toISOString()}).eq('id',ex.id);
+    else await sb.from('fridge_items').insert({name:i.name, location:'냉장', qty:i.qty||1, unit:i.unit||'개'});
+  }
+  const {error}=await sb.from('shopping_items').delete().in('id',done.map(i=>i.id)); if(fail(error)) return;
+  S.foodTab='fridge'; await reloadFood(); toast('냉장고에 넣었어요');
 }
 
 sb.auth.onAuthStateChange((ev)=>{ if(ev==='SIGNED_OUT'){ $('app').hidden=true; $('login').hidden=false; } });
