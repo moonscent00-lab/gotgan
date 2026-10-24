@@ -94,6 +94,9 @@ html,body{overflow-x:hidden;max-width:100%}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-end;justify-content:center;z-index:20}
 #modal.on{display:flex}
 #modal .sheet{background:var(--card);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+body.viewer #view button:disabled{display:none}
+body.viewer #view select:disabled,body.viewer #view input:disabled{opacity:1;color:var(--ink);-webkit-text-fill-color:var(--ink);appearance:none;-webkit-appearance:none;background:transparent;border-color:transparent;pointer-events:none}
+body.viewer .viewer-hide{display:none!important}
 #tip{position:fixed;z-index:40;pointer-events:none;background:var(--ink);color:var(--bg);font-size:13px;padding:6px 9px;border-radius:8px;opacity:0;transition:opacity .1s;white-space:nowrap}
 #tip.on{opacity:1}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--sub);margin:4px 0 8px}
@@ -537,7 +540,7 @@ async function boot(){
   const {data:{session}} = await sb.auth.getSession();
   if(!session){ $('login').hidden=false; $('app').hidden=true; return; }
   $('login').hidden=true; $('app').hidden=false;
-  S.me = session.user?.email || ''; S.owner = S.me==='moonscent00@gmail.com';   // 지아만 고치기·올리기 가능, 종수는 보기만
+  S.me = session.user?.email || ''; S.owner = S.me==='moonscent00@gmail.com'; document.body.classList.toggle('viewer', !S.owner);   // 지아만 고치기·올리기 가능, 종수는 보기만
   S.month = thisMonth(); $('month').value=S.month;
   await loadAll(); go(S.tab);
 }
@@ -571,6 +574,16 @@ async function loadAll(){
 }
 
 function go(tab){ tipOff(); if(S.tab==='food') flushMealState(); S.tab=tab; document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab)); render(); window.scrollTo(0,0); }
+
+// ── 종수님 보기 전용: 가계부 화면(정산·내역·예산·빚)의 고치는 칸과 버튼을 잠금. 살림 탭은 같이 씀 ──
+function lockView(){
+  if(S.owner || S.tab==='food') return;
+  $('view').querySelectorAll('input,select,textarea,button').forEach(el=>{
+    if(el.hasAttribute('data-view') || el.closest('.chips') || el.closest('summary')) return;
+    el.disabled=true;
+  });
+}
+new MutationObserver(()=>lockView()).observe(document.getElementById('view'),{childList:true,subtree:false});
 function render(){ ({settle:renderSettle, ledger:renderLedger, budget:renderBudget, loans:renderLoans, food:renderFood})[S.tab](); }
 
 // ── 엑셀 가져오기 ──
@@ -750,14 +763,14 @@ function renderLedger(){
   $('view').innerHTML = `
     <div class="chips">${FILTERS.filter(([k])=>k!=='new'||S.lastImport?.size).map(([k,l])=>`<button class="chip ${f===k?'on':''}" onclick="S.filter='${k}';renderLedger()">${l} ${k==='all'?S.tx.length:k==='new'?S.lastImport.size:''}</button>`).join('')}</div>
     <div class="row" style="gap:6px;margin-top:10px">
-      <select onchange="S.catFilter=this.value;renderLedger()" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px">
+      <select data-view onchange="S.catFilter=this.value;renderLedger()" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px">
         <option value="">모든 카테고리</option>${catsHere.map(c=>`<option ${c===S.catFilter?'selected':''}>${esc(c)}</option>`).join('')}</select>
-      <input id="ledSearch" value="${esc(S.search)}" placeholder="🔍 가게·메모 찾기" oninput="S.search=this.value;clearTimeout(window._st);window._st=setTimeout(()=>{renderLedger();const e=$('ledSearch');e.focus();e.setSelectionRange(e.value.length,e.value.length)},300)" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px">
+      <input data-view id="ledSearch" value="${esc(S.search)}" placeholder="🔍 가게·메모 찾기" oninput="S.search=this.value;clearTimeout(window._st);window._st=setTimeout(()=>{renderLedger();const e=$('ledSearch');e.focus();e.setSelectionRange(e.value.length,e.value.length)},300)" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px">
     </div>
     ${(S.catFilter||S.search)?`<div class="row between muted" style="margin-top:8px"><span>${list.length}건 · 합계 <b class="num" style="color:var(--ink)">${won(listSum)}</b></span><button class="btn small" onclick="S.catFilter='';S.search='';renderLedger()">필터 지우기</button></div>`:''}
     <div class="row between" style="margin-top:10px">
-      <div class="row" style="gap:12px;flex-wrap:wrap"><label class="muted row" style="gap:4px"><input type="checkbox" ${S.remember?'checked':''} onchange="S.remember=this.checked"> 바꾼 가게는 기억하기</label>
-      ${f==='all'?`<label class="muted row" style="gap:4px"><input type="checkbox" ${S.hideExcluded?'checked':''} onchange="S.hideExcluded=this.checked;renderLedger()"> 통장끼리·카드값 숨기기</label>`:''}</div>
+      <div class="row" style="gap:12px;flex-wrap:wrap"><label class="muted row viewer-hide" style="gap:4px"><input type="checkbox" ${S.remember?'checked':''} onchange="S.remember=this.checked"> 바꾼 가게는 기억하기</label>
+      ${f==='all'?`<label class="muted row" style="gap:4px"><input data-view type="checkbox" ${S.hideExcluded?'checked':''} onchange="S.hideExcluded=this.checked;renderLedger()"> 통장끼리·카드값 숨기기</label>`:''}</div>
       <button class="btn small" onclick="openAdd()">＋ 직접 입력</button>
     </div>
     ${ordered.map(txHtml).join('') || '<p class="muted" style="margin-top:20px">내역이 없어요. 정산 탭에서 엑셀을 올려주세요.</p>'}`;
