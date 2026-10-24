@@ -140,17 +140,17 @@ table.mini td:last-child{text-align:right}
 <script id="core">
 const CATS = [
   {name:'① 고정비', group:'지출', subs:['대출-사업','대출-지아','통신','공과금','구독','차량','건보/연금','기부','종수 카드값']},
-  {name:'② 보험료', group:'지출', subs:['달러종신','종수 보험','기타 보험']},
+  {name:'② 보험료', group:'지출', subs:['지아 보험','종수 보험','기타 보험']},
   {name:'④ 생활비', group:'지출', subs:['식재료','생활용품','반려동물','외식/배달']},
   {name:'⑤ 데이트·힐링', group:'지출', subs:['데이트','여행']},
   {name:'⑥ 종수 용돈', group:'지출', subs:['용돈']},
   {name:'⑦ 지아 용돈', group:'지출', subs:['용돈']},
   {name:'⑧ 건강', group:'지출', subs:['병원·약','헤모힘','운동']},
-  {name:'⑨ 엄마', group:'지출', subs:['용돈','선물']},
-  {name:'⑩ 시부모님', group:'지출', subs:['용돈','선물']},
+  {name:'⑨ 엄마', group:'지출', subs:['용돈','선물','보험','CCTV','헤모힘']},
+  {name:'⑩ 시부모님', group:'지출', subs:['용돈','선물','헤모힘']},
   {name:'⑪ 비정기', group:'지출', subs:['경조사','가전·가구','큰 수리비']},
   {name:'빌린 돈 갚기', group:'지출', subs:['엄마','시어머니']},
-  {name:'③ 저축', group:'저축', subs:['적금','저금통','투자','비상금']},
+  {name:'③ 저축', group:'저축', subs:['달러종신','적금','저금통','투자','비상금']},
   {name:'생활비 받음', group:'수입', subs:['종수 생활비']},
   {name:'사업소득', group:'수입', subs:['애터미 후원','보험 수수료','슈가펫 이체','부수입']},
   {name:'금융수입', group:'수입', subs:['이자','앱테크']},
@@ -241,7 +241,9 @@ function classify(row, rules){
     if(/원리금/.test(name) && /IBK|기업/.test(m)) return R('① 고정비','대출-지아');
     if(/굿네이버스|월드비전|유니세프|세이브더칠드런|기부/.test(name)) return R('① 고정비','기부');
     if(/CLAUDE|ANTHROPIC|네이버플러스|넷플릭스|유튜브|YOUTUBE|쿠팡와우|구독/i.test(name)) return R('① 고정비','구독');
-    if(/달러종신|종신/.test(name)) return R('② 보험료','달러종신');
+    if(/달러종신|종신/.test(name)) return R('③ 저축','달러종신');
+    if(/^\d{1,2}월\s*보험료$/.test(name)) return R('⑨ 엄마','보험');
+    if(/쉴더스|CCTV/i.test(name)) return R('⑨ 엄마','CCTV');
     if(/보험료/.test(name)) return R('② 보험료','');
     if(/용돈|오토바이/.test(name)){
       if(/종수|오토바이/.test(name)) return R('⑥ 종수 용돈','용돈');
@@ -392,7 +394,7 @@ function summarize(tx, budgets){
     }
     if(r.category==='① 고정비' && r.subcategory==='대출-사업' && r.treatment==='count') s.bizLoan+=-r.amount;
   }
-  s.budget={}; for(const b of budgets||[]) if(!b.subcategory) s.budget[b.category]=b.amount;
+  s.budget={}; for(const b of budgets||[]) s.budget[b.category]=(s.budget[b.category]||0)+(Number(b.amount)||0);
   s.net = s.income - s.expense - s.savings;
   return s;
 }
@@ -450,7 +452,7 @@ async function loadAll(){
   const [tx, rules, budgets, loans, debt, st, fr, me, sh] = await Promise.all([
     sb.from('transactions').select('*').eq('month',m).order('date',{ascending:false}).order('time',{ascending:false}),
     sb.from('rules').select('*'),
-    sb.from('budgets').select('*').eq('month',m),
+    sb.from('budgets').select('*').eq('month',m).order('sort'),
     sb.from('loans').select('*').order('pay_day'),
     sb.from('transactions').select('*').or('treatment.in.(advance,advance_refund,borrow),category.eq."빌린 돈 갚기"'),
     sb.from('settlements').select('*').eq('month',m).maybeSingle(),
@@ -683,40 +685,108 @@ async function doAdd(){
 async function delTx(id){ if(!confirm('삭제할까요?')) return; const {error}=await sb.from('transactions').delete().eq('id',id); if(fail(error)) return; await loadAll(); renderLedger(); }
 
 // ── 예산 화면 ──
+// 기본 예산 (우리집_가계예산.xlsx + 10월에 정한 변경사항)
+const BUDGET_TEMPLATE = [
+  ['① 고정비','건강보험료',74000,'삼성리더스카드','종수 명의'],
+  ['① 고정비','국민연금',70000,'삼성리더스카드','종수 명의'],
+  ['① 고정비','주차비',100000,'계좌이체','개인 사유지'],
+  ['① 고정비','전기세(집)',50000,'계좌이체','여름 기준'],
+  ['① 고정비','가스비(집)',10000,'KB국민카드','겨울엔 올라감'],
+  ['① 고정비','인터넷(집)',27500,'KB국민카드',''],
+  ['① 고정비','핸드폰(종수 KT)',109500,'KB국민카드',''],
+  ['① 고정비','핸드폰(지아 KT 메인)',50000,'KB국민카드','5만원으로 낮춤'],
+  ['① 고정비','핸드폰(지아 SKT 세컨)',29250,'KB국민카드','1년 유지'],
+  ['① 고정비','핸드폰(지아 SKT eSIM)',0,'KB국민카드','금액 확인 필요'],
+  ['① 고정비','핸드폰(KT M모바일)',2890,'KB국민카드','아빠 번호 유지'],
+  ['① 고정비','소나타 기름값',200000,'KB국민카드',''],
+  ['① 고정비','하이패스',100000,'삼성하이패스카드',''],
+  ['① 고정비','클로드',30000,'KB국민카드',''],
+  ['① 고정비','네이버플러스',4900,'KB국민카드',''],
+  ['① 고정비','굿네이버스',40000,'네이버페이','기부'],
+  ['① 고정비','대출-지아 (기업은행)',206244,'기업은행 통장','매달 1일'],
+  ['① 고정비','사업대출: 재창업 특례보증',482397,'계좌이체','26일'],
+  ['① 고정비','사업대출: 전북은행',279382,'계좌이체','23일'],
+  ['① 고정비','사업대출: 소상공인',131917,'계좌이체','10일 · 거치 중(이자만)'],
+  ['① 고정비','사업대출: 국민은행',160000,'계좌이체','26일 · 금액 확인 필요'],
+  ['① 고정비','예비비',100000,'','보험료·통신비 오차 대비'],
+  ['② 보험료','지아 개인보험',231155,'KB국민카드+계좌이체','삼성생명·삼성화재·한화2건·DB운전자'],
+  ['② 보험료','종수 개인보험',215796,'국민은행 통장','라이나·한화·삼성화재·DB운전자'],
+  ['③ 저축','달러종신',500000,'국민은행 통장','2,100달러'],
+  ['④ 생활비','식재료',250000,'다이소카드',''],
+  ['④ 생활비','반려동물(미용·구충제)',80000,'다이소카드',''],
+  ['④ 생활비','외식/배달',100000,'다이소카드','남으면 이월'],
+  ['⑤ 데이트·힐링','데이트',200000,'모임통장 이체','남으면 여행자금'],
+  ['⑥ 종수 용돈','용돈',500000,'종수 계좌 이체','밥값·오토바이 기름값·재량비 포함 · 1일'],
+  ['⑦ 지아 용돈','용돈',140000,'토스뱅크 이체','점심·대중교통·재량비·보험팀 회비'],
+  ['⑧ 건강','영양제',200000,'하나카드(애터미)','PV 수당 반영'],
+  ['⑨ 엄마','헤모힘',82000,'하나카드(애터미)','정기구독'],
+  ['⑨ 엄마','보험',106421,'계좌이체',''],
+  ['⑨ 엄마','CCTV',33000,'KB국민카드',''],
+  ['⑩ 시부모님','헤모힘',82000,'하나카드(애터미)','정기구독'],
+];
 function renderBudget(){
   const s=summarize(S.tx,S.budgets);
-  const cats=['③ 저축', ...EXP_CATS];
-  const total = cats.reduce((a,c)=>a+(s.budget[c]||0),0);
-  const loanSum = S.loans.filter(l=>l.active).reduce((a,l)=>a+(l.monthly_amount||0),0);
+  const cats=[...EXP_CATS.slice(0,2),'③ 저축',...EXP_CATS.slice(2)];
+  const total = Object.values(s.budget).reduce((a,b)=>a+b,0);
+  const rows = c => S.budgets.filter(b=>b.category===c).sort((a,b)=>(a.sort??0)-(b.sort??0));
+  const actual = c => c==='③ 저축'?s.savings:(s.byCat[c]||0);
+  const inp = 'border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 8px;width:100%;min-width:0';
   $('view').innerHTML = `
     <div class="card">
-      <div class="row between"><h2>${S.month.replace('-','년 ')}월 예산</h2><button class="btn small" onclick="copyBudget()">지난달 복사</button></div>
+      <div class="row between"><h2>${S.month.replace('-','년 ')}월 예산</h2></div>
       <div class="stats" style="margin-top:8px">
         <div class="stat"><div class="k">예산 합계</div><div class="v num">${won(total)}</div></div>
         <div class="stat"><div class="k">예상 수입 (3개월 평균)</div><div class="v num">${S.avgIncome!=null?won(S.avgIncome):'—'}</div></div>
       </div>
       ${S.avgIncome!=null && total>S.avgIncome?`<div class="alert bad">예산이 평균 수입보다 ${won(total-S.avgIncome)} 많아요</div>`:''}
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn" style="flex:1" onclick="copyBudget()">지난달 복사</button>
+        <button class="btn" style="flex:1" onclick="loadTemplate()">기본 예산 불러오기</button></div>
     </div>
-    <div class="card">
-      ${cats.map(c=>`<div class="budget-row"><div>${esc(c)}<div class="muted">이번 달 실제 ${won(c==='③ 저축'?s.savings:(s.byCat[c]||0))}${c==='① 고정비'?` · 대출만 ${won(loanSum)}`:''}</div></div>
-        <input inputmode="numeric" value="${s.budget[c]?Number(s.budget[c]).toLocaleString('ko-KR'):''}" placeholder="0" onchange="setBudget('${c}',this.value)"></div>`).join('')}
-    </div>`;
+    ${cats.map(c=>{ const list=rows(c); const sum=list.reduce((a,b)=>a+(Number(b.amount)||0),0); const act=actual(c);
+      return `<div class="card">
+        <div class="row between"><h2>${esc(c)}</h2><span class="num"><b>${won(sum)}</b></span></div>
+        <div class="muted">이번 달 실제 ${won(act)}${sum?` · ${act>sum?`<span style="color:var(--red)">${won(act-sum)} 넘음</span>`:`${won(sum-act)} 남음`}`:''}</div>
+        ${list.map(b=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) 110px 28px;gap:6px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)">
+            <input value="${esc(b.subcategory)}" placeholder="항목" style="${inp};border-color:transparent;background:none;padding-left:0;font-weight:500" onchange="saveItem('${b.id}',{subcategory:this.value.trim()})">
+            <input inputmode="numeric" value="${b.amount?Number(b.amount).toLocaleString('ko-KR'):''}" placeholder="0" style="${inp};text-align:right" onchange="saveItem('${b.id}',{amount:Number(this.value.replace(/[^\\d]/g,''))||0})">
+            <button class="ghost" onclick="delItem('${b.id}')" title="삭제">✕</button>
+            <input value="${esc(b.method||'')}" placeholder="결제수단" style="${inp};font-size:12px;padding:4px 6px;color:var(--sub)" onchange="saveItem('${b.id}',{method:this.value.trim()})">
+            <input value="${esc(b.memo||'')}" placeholder="메모" style="${inp};font-size:12px;padding:4px 6px;color:var(--sub);grid-column:2/4" onchange="saveItem('${b.id}',{memo:this.value.trim()})">
+          </div>`).join('')}
+        <button class="btn small" style="margin-top:10px" onclick="addItem('${c}')">＋ 항목 추가</button>
+      </div>`; }).join('')}`;
 }
-async function setBudget(cat, v){
-  const amount=Number(String(v).replace(/[^\d]/g,''))||0;
-  const {error}=await sb.from('budgets').upsert({month:S.month, category:cat, subcategory:'', amount},{onConflict:'month,category,subcategory'});
-  if(fail(error)) return;
-  const b=S.budgets.find(x=>x.category===cat && !x.subcategory); if(b) b.amount=amount; else S.budgets.push({month:S.month,category:cat,subcategory:'',amount});
-  renderBudget();
+async function saveItem(id, patch){
+  const {error}=await sb.from('budgets').update(patch).eq('id',id);
+  if(error){ fail(error); if(/duplicate|unique/i.test(error.message)) toast('같은 이름의 항목이 이미 있어요'); return; }
+  Object.assign(S.budgets.find(b=>b.id===id), patch); renderBudget(); toast('저장했어요');
+}
+async function addItem(cat){
+  const name=prompt(`${cat}에 넣을 항목 이름`, ''); if(!name) return;
+  const {error}=await sb.from('budgets').insert({month:S.month, category:cat, subcategory:name.trim(), amount:0, sort:S.budgets.length});
+  if(fail(error)) return; await loadAll(); renderBudget();
+}
+async function delItem(id){
+  const b=S.budgets.find(x=>x.id===id); if(!confirm(`"${b.subcategory||b.category}" 항목을 지울까요?`)) return;
+  const {error}=await sb.from('budgets').delete().eq('id',id); if(fail(error)) return; await loadAll(); renderBudget();
+}
+async function replaceBudget(rows){
+  if(S.budgets.length && !confirm(`${S.month} 예산이 이미 있어요. 지우고 새로 넣을까요?`)) return false;
+  const d=await sb.from('budgets').delete().eq('month',S.month); if(fail(d.error)) return false;
+  const r=await sb.from('budgets').insert(rows); if(fail(r.error)) return false;
+  await loadAll(); renderBudget(); return true;
+}
+async function loadTemplate(){
+  const rows=BUDGET_TEMPLATE.map(([category,subcategory,amount,method,memo],i)=>({month:S.month,category,subcategory,amount,method,memo,sort:i}));
+  if(await replaceBudget(rows)) toast('기본 예산을 넣었어요. 바뀐 것만 고치세요');
 }
 async function copyBudget(){
   const prev=shiftMonth(S.month,-1);
   const {data,error}=await sb.from('budgets').select('*').eq('month',prev); if(fail(error,'불러오기')) return;
-  if(!data.length){ toast(prev+' 예산이 없어요'); return; }
-  if(S.budgets.length && !confirm('지금 예산을 지난달 금액으로 덮어쓸까요?')) return;
-  const rows=data.map(b=>({month:S.month, category:b.category, subcategory:b.subcategory||'', amount:b.amount}));
-  const r=await sb.from('budgets').upsert(rows,{onConflict:'month,category,subcategory'}); if(fail(r.error)) return;
-  await loadAll(); renderBudget(); toast('지난달 예산을 가져왔어요');
+  if(!data.length){ toast(prev+' 예산이 없어요. "기본 예산 불러오기"를 눌러주세요'); return; }
+  const rows=data.map(b=>({month:S.month, category:b.category, subcategory:b.subcategory||'', amount:b.amount, method:b.method||null, memo:b.memo||null, sort:b.sort??0}));
+  if(await replaceBudget(rows)) toast('지난달 예산을 가져왔어요');
 }
 
 // ── 빚·대출 화면 ──
