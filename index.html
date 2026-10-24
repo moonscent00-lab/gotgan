@@ -513,7 +513,7 @@ const SB_URL = 'https://ervuakkqjmegzbqngwzc.supabase.co';
 const SB_KEY = 'sb_publishable_E53HmWOq2-gQrlOBlAmTKg_dcAFO2PV';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
-const S = { tab:'settle', month:'', tx:[], rules:[], budgets:[], loans:[], debtRows:[], settled:null, filter:'all', catFilter:'', search:'', lastImport:null, remember:true, avgIncome:null,
+const S = { tab:'settle', month:'', tx:[], rules:[], budgets:[], loans:[], debtRows:[], settled:null, filter:'all', hideExcluded:true, catFilter:'', search:'', lastImport:null, remember:true, avgIncome:null,
   fridge:[], meals:[], shop:[], foodTab:'plan', page:null };
 const $ = id => document.getElementById(id);
 const won = n => (Math.round(n)||0).toLocaleString('ko-KR')+'원';
@@ -569,7 +569,7 @@ async function loadAll(){
   if(!inc.error){ const per={}; inc.data.forEach(r=>per[r.month]=(per[r.month]||0)+r.amount); const v=Object.values(per); S.avgIncome = v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
 }
 
-function go(tab){ tipOff(); S.tab=tab; document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab)); render(); window.scrollTo(0,0); }
+function go(tab){ tipOff(); if(S.tab==='food') flushMealState(); S.tab=tab; document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab)); render(); window.scrollTo(0,0); }
 function render(){ ({settle:renderSettle, ledger:renderLedger, budget:renderBudget, loans:renderLoans, food:renderFood})[S.tab](); }
 
 // ── 엑셀 가져오기 ──
@@ -737,7 +737,7 @@ const FILTERS = [['new','🆕 방금 올린 것'],['all','전체'],['review','�
 function renderLedger(){
   const f=S.filter;
   let list=S.tx.filter(r=>{
-    if(f==='all') return true;
+    if(f==='all') return !(S.hideExcluded && !S.catFilter && ['exclude','borrow','borrow_repay'].includes(r.treatment));
     if(f==='new') return S.lastImport ? S.lastImport.has(r.id) : false;
     if(f==='excluded') return ['exclude','advance','advance_refund','borrow','borrow_repay'].includes(r.treatment);
     return r.treatment===f;
@@ -755,7 +755,8 @@ function renderLedger(){
     </div>
     ${(S.catFilter||S.search)?`<div class="row between muted" style="margin-top:8px"><span>${list.length}건 · 합계 <b class="num" style="color:var(--ink)">${won(listSum)}</b></span><button class="btn small" onclick="S.catFilter='';S.search='';renderLedger()">필터 지우기</button></div>`:''}
     <div class="row between" style="margin-top:10px">
-      <label class="muted row" style="gap:4px"><input type="checkbox" ${S.remember?'checked':''} onchange="S.remember=this.checked"> 바꾼 가게는 기억하기</label>
+      <div class="row" style="gap:12px;flex-wrap:wrap"><label class="muted row" style="gap:4px"><input type="checkbox" ${S.remember?'checked':''} onchange="S.remember=this.checked"> 바꾼 가게는 기억하기</label>
+      ${f==='all'?`<label class="muted row" style="gap:4px"><input type="checkbox" ${S.hideExcluded?'checked':''} onchange="S.hideExcluded=this.checked;renderLedger()"> 통장끼리·카드값 숨기기</label>`:''}</div>
       <button class="btn small" onclick="openAdd()">＋ 직접 입력</button>
     </div>
     ${ordered.map(txHtml).join('') || '<p class="muted" style="margin-top:20px">내역이 없어요. 정산 탭에서 엑셀을 올려주세요.</p>'}`;
@@ -1042,9 +1043,12 @@ let _saveT=null;
 window.__mealState = {};
 window.__saveMealState = function(){
   clearTimeout(_saveT);
-  _saveT=setTimeout(async()=>{ if(!S.page) return;
-    const {error}=await sb.from('meal_pages').update({state:window.__mealState}).eq('month',S.page.month);
-    if(error) console.error(error); },600);
+  _saveT=setTimeout(flushMealState,500);
+};
+async function flushMealState(){
+  clearTimeout(_saveT); if(!S.page) return;
+  const {error}=await sb.from('meal_pages').update({state:S.page.state}).eq('month',S.page.month);
+  if(error){ console.error(error); toast('체크 저장 실패: '+error.message); }
 };
 const SHIM = `<script>(function(){var P=parent,st=P.__mealState;var ls={getItem:function(k){return Object.prototype.hasOwnProperty.call(st,k)?st[k]:null},setItem:function(k,v){st[k]=String(v);P.__saveMealState()},removeItem:function(k){delete st[k];P.__saveMealState()},clear:function(){for(var k in st)delete st[k];P.__saveMealState()},key:function(i){return Object.keys(st)[i]||null},get length(){return Object.keys(st).length}};try{Object.defineProperty(window,'localStorage',{value:ls,configurable:true})}catch(e){}})();<\/script>`;
 function withShim(html){
@@ -1063,7 +1067,7 @@ function renderPlan(){
       <p class="muted">① 요청문을 복사해 AI에게 보내고 → ② AI가 준 HTML 파일을 "식단표 올리기"로 올리면 여기서 바로 보여요. 체크한 건 종수님 폰에서도 똑같이 보여요.</p></div>`;
     return;
   }
-  window.__mealState = Object.assign({}, p.state||{});
+  p.state = p.state || {}; window.__mealState = p.state;   // 같은 객체를 써서 다른 탭 갔다 와도 체크 유지
   $('foodView').innerHTML = bar + `<p class="muted" style="margin:6px 2px">올린 날 ${new Date(p.updated_at).toLocaleDateString('ko-KR')} · 체크하면 자동 저장</p>
     <iframe id="planFrame" style="width:100%;height:calc(100dvh - 230px);min-height:480px;border:1px solid var(--line);border-radius:14px;background:#fff"></iframe>`;
   $('planFrame').srcdoc = withShim(p.html);
