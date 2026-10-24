@@ -124,6 +124,7 @@ table.mini td:last-child{text-align:right}
 <div id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div id="toast"></div>
 <input type="file" id="file" accept=".xlsx,.xls" hidden onchange="importFile(this.files[0]);this.value=''">
+<input type="file" id="planFile" accept=".html,.htm,text/html" hidden onchange="uploadPlan(this.files[0]);this.value=''">
 
 <!-- ===== 핵심 규칙 (분류·엑셀 읽기) ===== -->
 <script id="core">
@@ -406,7 +407,7 @@ const SB_KEY = 'sb_publishable_E53HmWOq2-gQrlOBlAmTKg_dcAFO2PV';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
 const S = { tab:'settle', month:'', tx:[], rules:[], budgets:[], loans:[], debtRows:[], settled:null, filter:'all', remember:true, avgIncome:null,
-  fridge:[], meals:[], shop:[], foodTab:'fridge' };
+  fridge:[], meals:[], shop:[], foodTab:'plan', page:null };
 const $ = id => document.getElementById(id);
 const won = n => (Math.round(n)||0).toLocaleString('ko-KR')+'원';
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -447,6 +448,8 @@ async function loadAll(){
     sb.from('meal_plans').select('*').gte('date',m+'-01').lt('date',shiftMonth(m,1)+'-01').order('date'),
     sb.from('shopping_items').select('*').eq('month',m).order('name'),
   ]);
+  const pg = await sb.from('meal_pages').select('*').eq('month',m).maybeSingle();
+  S.page = pg.error ? null : pg.data; S.pageMissing = !!pg.error;
   for(const r of [tx,rules,budgets,loans,debt,fr,me,sh]) if(fail(r.error,'불러오기')) return;
   S.fridge=fr.data; S.meals=me.data; S.shop=sh.data;
   S.tx=tx.data; S.rules=rules.data; S.budgets=budgets.data; S.loans=loans.data; S.debtRows=debt.data; S.settled=st.data;
@@ -756,9 +759,87 @@ const have = name => S.fridge.some(f=>(f.qty==null||f.qty>0) && (nkey(f.name).in
 
 function renderFood(){
   const t=S.foodTab;
-  const tabs=[['fridge','🧊 냉장고'],['meals','🍳 식단'],['shop','🛒 장보기']];
+  const tabs=[['plan','📅 이달 식단표'],['fridge','🧊 냉장고'],['shop','🛒 추가 장보기']];
   $('view').innerHTML = `<div class="chips">${tabs.map(([k,l])=>`<button class="chip ${t===k?'on':''}" onclick="S.foodTab='${k}';renderFood()">${l}</button>`).join('')}</div><div id="foodView"></div>`;
-  ({fridge:renderFridge, meals:renderMeals, shop:renderShop})[t]();
+  ({plan:renderPlan, fridge:renderFridge, meals:renderMeals, shop:renderShop})[t]();
+}
+
+
+// ── 📅 이달 식단표 (AI가 만든 HTML을 그대로 보여주기) ──
+// 식단표 안의 체크박스 기록(localStorage)을 Supabase에 저장해서, 지아·종수 폰에서 같이 보이게 함
+let _saveT=null;
+window.__mealState = {};
+window.__saveMealState = function(){
+  clearTimeout(_saveT);
+  _saveT=setTimeout(async()=>{ if(!S.page) return;
+    const {error}=await sb.from('meal_pages').update({state:window.__mealState}).eq('month',S.page.month);
+    if(error) console.error(error); },600);
+};
+const SHIM = `<script>(function(){var P=parent,st=P.__mealState;var ls={getItem:function(k){return Object.prototype.hasOwnProperty.call(st,k)?st[k]:null},setItem:function(k,v){st[k]=String(v);P.__saveMealState()},removeItem:function(k){delete st[k];P.__saveMealState()},clear:function(){for(var k in st)delete st[k];P.__saveMealState()},key:function(i){return Object.keys(st)[i]||null},get length(){return Object.keys(st).length}};try{Object.defineProperty(window,'localStorage',{value:ls,configurable:true})}catch(e){}})();<\/script>`;
+function withShim(html){
+  if(/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, m=>m+SHIM);
+  return SHIM+html;
+}
+function renderPlan(){
+  const p=S.page;
+  if(S.pageMissing){ $('foodView').innerHTML=`<div class="alert bad">식단표 저장 칸이 아직 없어요. Supabase SQL Editor에서 안내드린 SQL을 먼저 실행해 주세요.</div>`; return; }
+  const bar = `<div class="card row" style="gap:8px;padding:12px;flex-wrap:wrap">
+      <button class="btn" style="flex:1" onclick="openPlanPrompt()">🤖 AI에게 보낼 요청문</button>
+      <button class="btn primary" style="flex:1" onclick="$('planFile').click()">📤 식단표 올리기</button>
+      ${p?`<button class="btn small" onclick="resetPlanChecks()">체크 초기화</button>`:''}</div>`;
+  if(!p){
+    $('foodView').innerHTML = bar + `<div class="card"><h2>${S.month.replace('-','년 ')}월 식단표가 아직 없어요</h2>
+      <p class="muted">① 요청문을 복사해 AI에게 보내고 → ② AI가 준 HTML 파일을 "식단표 올리기"로 올리면 여기서 바로 보여요. 체크한 건 종수님 폰에서도 똑같이 보여요.</p></div>`;
+    return;
+  }
+  window.__mealState = Object.assign({}, p.state||{});
+  $('foodView').innerHTML = bar + `<p class="muted" style="margin:6px 2px">올린 날 ${new Date(p.updated_at).toLocaleDateString('ko-KR')} · 체크하면 자동 저장</p>
+    <iframe id="planFrame" style="width:100%;height:calc(100dvh - 230px);min-height:480px;border:1px solid var(--line);border-radius:14px;background:#fff"></iframe>`;
+  $('planFrame').srcdoc = withShim(p.html);
+}
+async function uploadPlan(f){
+  if(!f) return;
+  const html = await f.text();
+  if(!/<html|<body|<div|<script/i.test(html)){ toast('HTML 파일이 아닌 것 같아요'); return; }
+  if(S.page && !confirm(`${S.month} 식단표가 이미 있어요. 새 파일로 바꿀까요? (체크 기록은 지워져요)`)) return;
+  const {error}=await sb.from('meal_pages').upsert({month:S.month, html, state:{}, updated_at:new Date().toISOString()});
+  if(fail(error)) return;
+  await loadAll(); S.foodTab='plan'; renderFood(); toast(`${S.month} 식단표를 올렸어요`);
+}
+async function resetPlanChecks(){
+  if(!confirm('체크한 기록을 모두 지울까요?')) return;
+  const {error}=await sb.from('meal_pages').update({state:{}}).eq('month',S.month); if(fail(error)) return;
+  S.page.state={}; renderPlan();
+}
+function planPromptText(){
+  const fridge = S.fridge.length ? S.fridge.map(f=>`- ${f.name} ${f.qty??''}${f.unit||''} (${f.location||'냉장'}${f.expires?`, 기한 ${f.expires}`:''}${f.note?`, ${f.note}`:''})`).join('\n') : '- (비어 있음)';
+  const bud=(S.budgets.find(b=>b.category==='④ 생활비'&&!b.subcategory)||{}).amount;
+  const [y,mo]=S.month.split('-');
+  return `${y}년 ${Number(mo)}월 한 달 식단표를 HTML 파일 하나로 만들어줘. 지난번에 만들어준 "장보기·식단표"랑 같은 형식으로.
+
+[우리집 규칙]
+${HOUSE_RULES}
+
+[지금 냉장고에 있는 것] 먼저 쓰는 메뉴로, 기한 가까운 것부터
+${fridge}
+
+[예산] ④ 생활비(식재료·생활용품) ${bud?bud.toLocaleString('ko-KR')+'원':'미정'}
+
+[HTML에 꼭 들어갈 것]
+- 탭 4개: 장보기 / 날짜별 / 레시피 / 해동
+- 장보기: 매장별(트레이더스·홈플러스·롯데마트 제타)로 묶고, 1차·2차처럼 장보는 날을 나눠서. 품목마다 체크박스, 수량, 예상 가격, 맨 위에 예상 합계
+- 날짜별: 1일~말일, 날마다 아침·저녁 메뉴와 "오늘 할 일"(해동, 밀프렙 등) 체크박스
+- 레시피: 메뉴별 2인분 재료와 순서. 단계마다 체크박스
+- 해동: "몇 일 밤에 무엇을 냉장실로 옮기기" 목록에 체크박스
+- 체크 상태는 localStorage에 저장 (키 이름 앞에 "${S.month}-" 붙이기)
+- 폰 화면 기준, 글씨 크게, 한 파일 안에 CSS·JS 전부 넣기 (외부 파일 없이)
+- 파일 이름: ${S.month}_식단표.html`;
+}
+function openPlanPrompt(){
+  openModal(`<h2>AI에게 보낼 요청문</h2><p class="muted">냉장고·예산이 자동으로 들어가 있어요. 복사해서 AI에게 붙여넣으세요.</p>
+    <textarea id="planPrompt" rows="14" style="width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px;font:13px/1.5 inherit;color:var(--ink)">${esc(planPromptText())}</textarea>
+    <div class="row" style="margin-top:12px;gap:8px"><button class="btn" style="flex:1" onclick="closeModal()">닫기</button>
+    <button class="btn primary" style="flex:1" onclick="navigator.clipboard.writeText($('planPrompt').value).then(()=>toast('복사했어요'),()=>{$('planPrompt').select();toast('길게 눌러 복사해 주세요')})">복사하기</button></div>`);
 }
 
 // ── 냉장고 ──
@@ -792,7 +873,7 @@ function openFridge(id){
     <datalist id="unitList">${UNITS.map(u=>`<option>${u}</option>`).join('')}</datalist>
     <label class="field">메모<input id="frNote" value="${esc(f.note||'')}" placeholder="예: 1kg 소분, 2팩씩"></label>
     <div class="row" style="margin-top:14px;gap:8px">${id?`<button class="btn" onclick="delFridge('${id}')">꺼냄(삭제)</button>`:''}<button class="btn" style="flex:1" onclick="closeModal()">취소</button><button class="btn primary" style="flex:1" onclick="saveFridge('${id||''}')">저장</button></div>`);
-  setTimeout(()=>$('frName').focus(),50);
+  setTimeout(()=>$('frName')?.focus(),50);
 }
 async function saveFridge(id){
   const row={name:$('frName').value.trim(), location:$('frLoc').value, expires:$('frExp').value||null,
@@ -834,13 +915,17 @@ function renderMeals(){
     const cells = SLOTS.map(sl=>{ const m=S.meals.find(x=>x.date===ds && x.slot===sl);
       const miss = m ? (m.ingredients||[]).filter(i=>!have(i)).length : 0;
       return `<button class="btn small" style="flex:1;text-align:left;min-width:0;${m?'':'color:var(--sub)'}" onclick="openMeal('${ds}','${sl}')">
-        <span class="muted">${sl}</span> ${m?esc(m.menu):'＋'}${m&&miss?` <span class="tag memo">재료 ${miss}</span>`:''}</button>`; }).join('');
+        <span class="muted">${sl}</span> ${m?esc(m.menu):'＋'}${m&&m.recipe?' 📖':''}${m&&miss?` <span class="tag memo">재료 ${miss}</span>`:''}</button>`; }).join('');
     week += `<div class="row" style="gap:6px;padding:5px 0;${ds===today?'background:var(--accent-soft);border-radius:8px;padding:5px 4px':''}">
       <span class="num" style="width:58px;font-size:13px;color:${wd===0?'var(--red)':wd===6?'var(--accent)':'var(--sub)'}">${mo}/${d} ${W[wd]}</span>${cells}</div>`;
     if(wd===6 || d===last){ html+=`<div class="card" style="padding:10px 12px">${week}</div>`; week=''; }
   }
   const planned=S.meals.length, missAll=new Set(S.meals.flatMap(m=>(m.ingredients||[]).filter(i=>!have(i))));
-  $('foodView').innerHTML = `<div class="row between" style="margin-top:12px"><span class="muted">${planned}끼 계획됨 · 사야 할 재료 ${missAll.size}가지</span>
+  $('foodView').innerHTML = `
+    <div class="card row" style="gap:8px;padding:12px">
+      <button class="btn" style="flex:1" onclick="openAiPrompt()">🤖 AI에게 보낼 내용</button>
+      <button class="btn primary" style="flex:1" onclick="openAiPaste()">📋 AI 결과 붙여넣기</button></div>
+    <div class="row between" style="margin-top:12px"><span class="muted">${planned}끼 계획됨 · 사야 할 재료 ${missAll.size}가지</span>
     <button class="btn small" onclick="S.foodTab='shop';renderFood()">장보기로 →</button></div>${html}`;
 }
 function openMeal(date, slot){
@@ -850,23 +935,112 @@ function openMeal(date, slot){
     <label class="field">메뉴<input id="mlMenu" value="${esc(m.menu||'')}" placeholder="예: 닭가슴살 원팬 볶음밥"></label>
     <label class="field">재료 (쉼표로 구분)<input id="mlIng" value="${esc(ing.join(', '))}" placeholder="예: 닭가슴살, 양파, 계란"></label>
     ${ing.length?`<p class="muted">${ing.map(i=>have(i)?`✓ ${esc(i)}`:`<b style="color:var(--accent)">✗ ${esc(i)}</b>`).join(' · ')}</p>`:''}
+    <label class="field">레시피<textarea id="mlRecipe" rows="6" style="border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink);resize:vertical">${esc(m.recipe||'')}</textarea></label>
     <label class="muted row" style="gap:6px;margin-top:10px"><input type="checkbox" id="mlRepeat"> 이번 달 매주 ${'일월화수목금토'[new Date(date).getDay()]}요일 ${slot}에도 넣기</label>
     <div class="row" style="margin-top:14px;gap:8px">${m.id?`<button class="btn" onclick="delMeal('${m.id}')">지우기</button>`:''}<button class="btn" style="flex:1" onclick="closeModal()">취소</button><button class="btn primary" style="flex:1" onclick="saveMeal('${date}','${slot}')">저장</button></div>`);
-  setTimeout(()=>$('mlMenu').focus(),50);
+  setTimeout(()=>$('mlMenu')?.focus(),50);
 }
 async function saveMeal(date, slot){
   const menu=$('mlMenu').value.trim(); const ingredients=$('mlIng').value.split(/[,，、]/).map(s=>s.trim()).filter(Boolean);
+  const recipe=$('mlRecipe').value.trim()||null;
   if(!menu){ toast('메뉴를 넣어주세요'); return; }
   const dates=[date];
   if($('mlRepeat').checked){ let d=new Date(date); for(;;){ d=new Date(d.getTime()+7*864e5); const s=d.toISOString().slice(0,10); if(!s.startsWith(S.month)) break; dates.push(s); } }
   for(const ds of dates){
     const ex=S.meals.find(x=>x.date===ds && x.slot===slot);
-    const q = ex ? sb.from('meal_plans').update({menu,ingredients}).eq('id',ex.id) : sb.from('meal_plans').insert({date:ds,slot,menu,ingredients});
+    const q = ex ? sb.from('meal_plans').update({menu,ingredients,recipe}).eq('id',ex.id) : sb.from('meal_plans').insert({date:ds,slot,menu,ingredients,recipe});
     const {error}=await q; if(fail(error)) return;
   }
   closeModal(); await reloadFood(); toast(dates.length>1?`${dates.length}끼 넣었어요`:'저장했어요');
 }
 async function delMeal(id){ const {error}=await sb.from('meal_plans').delete().eq('id',id); if(fail(error)) return; closeModal(); await reloadFood(); }
+
+// ── AI 주고받기 ──
+const HOUSE_RULES = `- 부부 2인 가구. 아침은 보통 남편 혼자, 화·목은 가끔 같이 먹음. 저녁은 같이 또는 혼자
+- 주방이 좁아서 저녁은 반찬 여러 개 대신 원팬·한 그릇 요리 위주
+- 남편 출근용 아침은 미리 만들어 냉동해 두는 밀프렙(예: 냉동 밥버거) 좋음
+- 화·수·목 저녁에 수영 (저녁은 수영 전후로 먹음)
+- 둘 다 삶은 고구마, 삶은 계란 싫어함. 요거트볼 아침은 금방 배고픔
+- 고기는 1kg 단위 냉동으로 벌크 구매해서 직접 소분
+- 장보기는 트레이더스·홈플러스·롯데마트 제타`;
+function aiPromptText(){
+  const tm=shiftMonth(S.month,0);
+  const fridge = S.fridge.length ? S.fridge.map(f=>`- ${f.name} ${f.qty??''}${f.unit||''} (${f.location||'냉장'}${f.expires?`, 기한 ${f.expires}`:''}${f.note?`, ${f.note}`:''})`).join('\n') : '- (비어 있음)';
+  const bud=(S.budgets.find(b=>b.category==='④ 생활비'&&!b.subcategory)||{}).amount;
+  return `${tm} 한 달 식단표, 레시피, 장보기 목록을 짜줘.
+
+[우리집 규칙]
+${HOUSE_RULES}
+
+[지금 냉장고에 있는 것] — 먼저 쓰는 메뉴로 짜줘. 기한 가까운 것 우선
+${fridge}
+
+[예산] ④ 생활비(식재료·생활용품) ${bud?bud.toLocaleString('ko-KR')+'원':'미정'}
+
+[답변 형식] 설명 없이 아래 JSON 하나만 코드블록으로 줘.
+- 답이 길어서 한 번에 다 못 쓰면, 1주차부터 한 주씩 나눠서 각각 완전한 JSON 코드블록으로 줘. 내가 "다음 주"라고 하면 이어서 줘
+- 레시피는 같은 메뉴가 반복되면 처음 한 번만 자세히 쓰고, 다음부터는 "앞과 같음"으로 짧게
+- slot은 "아침" 또는 "저녁"만
+- ingredients는 재료 이름만 (양은 recipe에 적기). 냉장고에 있는 재료는 위 이름 그대로
+- recipe는 2인분 기준, 번호 붙인 짧은 단계
+- shopping은 냉장고에 없어서 사야 할 것만. store는 "트레이더스", "홈플러스", "롯데마트 제타", "기타" 중 하나. est_price는 예상 가격(원, 숫자)
+\`\`\`json
+{
+  "month": "${tm}",
+  "meals": [
+    {"date": "${tm}-01", "slot": "저녁", "menu": "메뉴 이름", "ingredients": ["재료1", "재료2"], "recipe": "1. ...\\n2. ..."}
+  ],
+  "shopping": [
+    {"name": "양파", "qty": 3, "unit": "개", "store": "홈플러스", "est_price": 3000}
+  ]
+}
+\`\`\``;
+}
+function openAiPrompt(){
+  openModal(`<h2>AI에게 보낼 내용</h2><p class="muted">냉장고와 예산이 자동으로 들어가 있어요. 고칠 게 있으면 고친 뒤 복사해서 AI에게 붙여넣으세요.</p>
+    <textarea id="aiPrompt" rows="14" style="width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px;font:13px/1.5 inherit;color:var(--ink)">${esc(aiPromptText())}</textarea>
+    <div class="row" style="margin-top:12px;gap:8px"><button class="btn" style="flex:1" onclick="closeModal()">닫기</button>
+    <button class="btn primary" style="flex:1" onclick="navigator.clipboard.writeText($('aiPrompt').value).then(()=>toast('복사했어요. AI에게 붙여넣으세요'),()=>{$('aiPrompt').select();toast('길게 눌러 복사해 주세요')})">복사하기</button></div>`);
+}
+function openAiPaste(){
+  openModal(`<h2>AI 결과 붙여넣기</h2><p class="muted">AI가 준 답변을 통째로 붙여넣으면 JSON 부분만 찾아서 읽어요.</p>
+    <textarea id="aiResult" rows="12" placeholder='{"month": "...", "meals": [...], "shopping": [...]}' style="width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px;font:13px/1.5 monospace;color:var(--ink)"></textarea>
+    <label class="muted row" style="gap:6px;margin-top:8px"><input type="checkbox" id="aiReplace" checked> 같은 날짜에 이미 있는 식단은 새 것으로 바꾸기</label>
+    <p class="muted" style="margin:4px 0 0">한 주씩 나눠서 여러 번 붙여넣어도 돼요. 붙여넣은 날짜만 바뀌고 나머지는 그대로예요.</p>
+    <div class="row" style="margin-top:12px;gap:8px"><button class="btn" style="flex:1" onclick="closeModal()">취소</button><button class="btn primary" style="flex:1" onclick="applyAi()">가져오기</button></div>`);
+}
+function parseAiJson(text){
+  const block = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  let s = block ? block[1] : text; const a=s.indexOf('{'), b=s.lastIndexOf('}');
+  if(a<0||b<0) throw new Error('JSON을 못 찾았어요');
+  return JSON.parse(s.slice(a,b+1));
+}
+async function applyAi(){
+  let data; try{ data=parseAiJson($('aiResult').value); }catch(e){ toast('읽기 실패: '+e.message); return; }
+  const month = String(data.month||S.month).slice(0,7);
+  const meals = (data.meals||[]).filter(m=>m.date && m.menu && String(m.date).startsWith(month)).map(m=>({
+    date:String(m.date).slice(0,10), slot: m.slot==='아침'?'아침':'저녁', menu:String(m.menu).trim(),
+    ingredients:(Array.isArray(m.ingredients)?m.ingredients:String(m.ingredients||'').split(',')).map(x=>String(x).trim()).filter(Boolean),
+    recipe: m.recipe? String(m.recipe).replace(/\\n/g,'\n') : null }));
+  const shop = (data.shopping||[]).filter(i=>i.name).map(i=>({month, name:String(i.name).trim(), qty:Number(i.qty)||null, unit:i.unit||null,
+    store: STORES.includes(i.store)?i.store:(i.store?'기타':null), est_price:Number(String(i.est_price??'').replace(/[^\d]/g,''))||null, checked:false}));
+  if(!meals.length && !shop.length){ toast(month+' 식단이나 장보기가 없어요'); return; }
+  if(month!==S.month){ S.month=month; $('month').value=month; }
+  const replace=$('aiReplace').checked;
+  if(replace && meals.length){
+    const d1=await sb.from('meal_plans').delete().in('date',[...new Set(meals.map(m=>m.date))]); if(fail(d1.error)) return;
+  }
+  const exist = replace ? [] : (await sb.from('meal_plans').select('date,slot').gte('date',month+'-01').lt('date',shiftMonth(month,1)+'-01')).data||[];
+  const taken=new Set(exist.map(e=>e.date+e.slot));
+  const newMeals=meals.filter(m=>!taken.has(m.date+m.slot));
+  if(newMeals.length){ const r=await sb.from('meal_plans').insert(newMeals); if(fail(r.error)) return; }
+  const cur=(await sb.from('shopping_items').select('name').eq('month',month)).data||[];
+  const had=new Set(cur.map(i=>nkey(i.name)));
+  const newShop=shop.filter(i=>!had.has(nkey(i.name)));
+  if(newShop.length){ const r=await sb.from('shopping_items').insert(newShop); if(fail(r.error)) return; }
+  closeModal(); await loadAll(); S.foodTab='meals'; go('food');
+  toast(`식단 ${newMeals.length}끼 · 장보기 ${newShop.length}가지를 넣었어요`);
+}
 
 // ── 장보기 ──
 function renderShop(){
@@ -880,7 +1054,7 @@ function renderShop(){
       <div class="row" style="gap:6px"><input id="shName" placeholder="살 것 (예: 두부)" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 10px" onkeydown="if(event.key==='Enter')addShop()">
         <select id="shStore" style="border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 6px">${STORES.map(s=>`<option>${s}</option>`).join('')}</select>
         <button class="btn primary small" onclick="addShop()">추가</button></div>
-      <button class="btn" style="width:100%;margin-top:10px" onclick="shopFromMeals()">🍳 식단에서 부족한 재료 자동으로 담기</button>
+      <p class="muted" style="margin:8px 0 0">식단표에 없는 것(휴지, 세제, 갑자기 생각난 것)을 적어두는 곳이에요.</p>
       <p class="muted" style="margin:8px 0 0">남은 것 ${left}개 · 예상 ${won(est)}${bud?` · ④ 생활비 예산 ${won(bud)} 중 ${won(spent)} 씀`:''}</p>
       ${bud && est>bud-spent?`<div class="alert warn">예상 장보기 금액이 남은 생활비 예산(${won(Math.max(0,bud-spent))})보다 많아요</div>`:''}
     </div>
