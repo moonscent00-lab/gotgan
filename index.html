@@ -207,10 +207,12 @@ function treatmentOf(cat, row){
 const R = (category, subcategory='', extra={}) => ({category, subcategory, ...extra});
 const realMinor = m => { const s=String(m??'').trim(); return s && s!=='미분류' ? s : ''; };
 
-const NO_MEMORY = /ATOMY|애터미/i;   // 같은 가게라도 매번 용도가 달라서 기억하지 않음
+const NO_MEMORY = /ATOMY|애터미|^(삼성|신한|하나|국민|KB|현대|롯데|우리|농협|BC|비씨)\s*카드|카드\s*(결제|대금|출금)|^이지아$|^이종수$|^토스\s|^카카오페이$|^네이버페이$/i;   // 같은 가게라도 매번 용도가 달라서 기억하지 않음
 function classify(row, rules){
   if(NO_MEMORY.test(row.merchant||'')) rules=[];
   if(realMinor(row.bs_major)) rules=[];   // 뱅크샐러드에서 분류해둔 건 그걸 먼저 따름 (곳간에서 기억한 규칙은 미분류일 때만)
+  const fits = c => INCOME_CATS.has(c) || c==='🚫 대납 환급' || c==='🚫 빌린 돈' ? row.amount>0 : !(row.type==='수입');   // 수입 분류는 들어온 돈에만
+  rules = rules.filter(r=>fits(r.category));
   const r1 = rules.find(r=>r.match_field==='merchant' && r.match_value===row.merchant);
   if(r1) return R(r1.category, r1.subcategory||'');
   const r2 = rules.find(r=>r.match_field==='method' && r.match_value===row.method);
@@ -578,7 +580,8 @@ async function importFile(f){
     const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
     const raw = parseBanksalad(wb);
     // 이번 달 + 지난달만 가져오기 → 일주일에 한 번 올려도 달이 바뀌는 주까지 빠짐없이
-    const months = [...new Set([thisMonth(), shiftMonth(thisMonth(),-1), S.month])];
+    const START = '2026-10';   // 곳간 시작 달. 이전 달은 가져오지 않음
+    const months = [...new Set([thisMonth(), shiftMonth(thisMonth(),-1), S.month])].filter(mm=>mm>=START);
     let parents=[], children=[];
     for(const m of months){ const b=buildImport(raw, m, S.rules); parents.push(...b.parents); children.push(...b.children); }
     if(!parents.length){ toast('최근 두 달 내역이 파일에 없어요'); return; }
@@ -793,7 +796,7 @@ async function changeCat(id, cat){
     await sb.from('rules').upsert({match_field:'merchant', match_value:r.merchant, category:cat, subcategory:''},{onConflict:'match_field,match_value'});
     const ru=S.rules.find(x=>x.match_field==='merchant'&&x.match_value===r.merchant);
     if(ru){ ru.category=cat; ru.subcategory=''; } else S.rules.push({match_field:'merchant',match_value:r.merchant,category:cat,subcategory:''});
-    for(const o of S.tx.filter(o=>o!==r && !o.parent_id && o.merchant===r.merchant && (o.category===old || o.category===REVIEW))){
+    for(const o of S.tx.filter(o=>o!==r && !o.parent_id && o.merchant===r.merchant && o.type===r.type && Math.sign(o.amount)===Math.sign(r.amount) && (o.category===old || o.category===REVIEW))){
       if(await saveTx(o,{category:cat, subcategory:''})) n++;
     }
   }
