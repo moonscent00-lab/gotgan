@@ -1,0 +1,288 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>10월 장보기·식단표</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: 휴대폰 한 손 사용 — 상단 고정 탭 4개, 아래로 카드가 쌓이는 단일 열 */
+:root{
+  --bg:#F4F7F2; --surface:#FFFFFF; --ink:#1C2520; --muted:#5E6B63; --line:#DCE4DD;
+  --accent:#2E6A4E; --accent-soft:#E2EFE7; --today:#F3C54B; --today-soft:#FFF6D8;
+  --frost:#2F72A8; --frost-soft:#E3EEF7; --swim:#6A4FB3; --swim-soft:#EEE9F8; --done:#9AA69F;
+  --display:"IBM Plex Sans KR","Noto Sans KR",system-ui,sans-serif;
+  --body:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121815; --surface:#1A221E; --ink:#E6EDE8; --muted:#9DABA2; --line:#2C3832;
+  --accent:#7CC6A0; --accent-soft:#1F3229; --today:#F3C54B; --today-soft:#332C14;
+  --frost:#7DB6E6; --frost-soft:#18283A; --swim:#B7A2F0; --swim-soft:#261F3A; --done:#5F6B64; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121815; --surface:#1A221E; --ink:#E6EDE8; --muted:#9DABA2; --line:#2C3832;
+  --accent:#7CC6A0; --accent-soft:#1F3229; --today:#F3C54B; --today-soft:#332C14;
+  --frost:#7DB6E6; --frost-soft:#18283A; --swim:#B7A2F0; --swim-soft:#261F3A; --done:#5F6B64; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 40px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:640px;margin:0 auto}
+header.top{padding-block:20px 8px}
+h1{font-family:var(--display);font-size:1.45rem;margin:0;text-wrap:balance;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:.85rem;margin-top:2px}
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-block:10px;border-bottom:1px solid var(--line)}
+nav.tabs button{font:500 .9rem var(--body);color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:999px;padding:8px 4px;cursor:pointer}
+nav.tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700}
+button:focus-visible,summary:focus-visible,label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+section.panel{padding-top:16px;display:flex;flex-direction:column;gap:14px}
+h2{font-family:var(--display);font-size:1.1rem;margin:4px 0 0}
+.note{color:var(--muted);font-size:.85rem}
+.group{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.group h3{margin:0 0 6px;font-size:.78rem;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.check{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line);cursor:pointer}
+.group h3 + .check,.check:first-child{border-top:0}
+.check input{appearance:none;flex:none;width:22px;height:22px;margin-top:1px;border:2px solid var(--accent);border-radius:6px;display:grid;place-content:center;background:var(--surface);cursor:pointer}
+.check input::after{content:"";width:11px;height:6px;border-left:2.5px solid var(--surface);border-bottom:2.5px solid var(--surface);transform:rotate(-45deg) translate(1px,-1px);opacity:0}
+.check input:checked{background:var(--accent)}
+.check input:checked::after{opacity:1}
+.check .t{flex:1;min-width:0}
+.check .q{color:var(--muted);font-size:.85rem;white-space:nowrap}
+.check input:checked ~ .t{color:var(--done);text-decoration:line-through}
+.progress{display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums;font-size:.9rem}
+.bar{flex:1;height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+.pill{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:99px;vertical-align:2px}
+.pill.swim{background:var(--swim-soft);color:var(--swim)}
+.pill.today{background:var(--today);color:#2a2306}
+.pill.frost{background:var(--frost-soft);color:var(--frost)}
+.day{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;scroll-margin-top:72px}
+.day.is-today{border:2px solid var(--today);background:linear-gradient(var(--today-soft),var(--today-soft)) top/100% 44px no-repeat,var(--surface)}
+.day.past{opacity:.6}
+.day .head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.day .date{font-family:var(--display);font-weight:700;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:42px 1fr;gap:8px;padding:5px 0}
+.row .k{color:var(--muted);font-size:.8rem;padding-top:2px}
+.row a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+.task{margin-top:6px;border-radius:10px;padding:2px 10px}
+.task.prep{background:var(--accent-soft)}
+.task.thaw{background:var(--frost-soft)}
+.task .check{border-top:0;padding:7px 0}
+details.recipe{background:var(--surface);border:1px solid var(--line);border-radius:14px;scroll-margin-top:72px}
+details.recipe summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px}
+details.recipe summary::-webkit-details-marker{display:none}
+details.recipe summary .nm{flex:1;font-weight:700}
+details.recipe summary .meta{color:var(--muted);font-size:.8rem;white-space:nowrap}
+details.recipe summary::after{content:"＋";color:var(--accent);font-weight:700}
+details.recipe[open] summary::after{content:"－"}
+details.recipe .body{padding:0 14px 14px;border-top:1px solid var(--line)}
+.ing{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.ing span{background:var(--accent-soft);border-radius:8px;padding:3px 8px;font-size:.85rem}
+ol.steps{margin:6px 0 0;padding-left:1.25em;display:flex;flex-direction:column;gap:6px}
+.tip{margin-top:10px;font-size:.85rem;color:var(--muted)}
+.cat{font-size:.78rem;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:8px 0 -4px}
+.reset{align-self:flex-start;font:500 .8rem var(--body);color:var(--muted);background:transparent;border:1px dashed var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+.reset.armed{color:var(--surface);background:var(--muted);border-style:solid}
+@media (prefers-reduced-motion: reduce){.bar i{transition:none}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>10월 장보기·식단표</h1>
+    <div class="sub">10/20(화) ~ 10/31(토) · 2인 · 저녁은 원팬 · ⚡ 화·수·목 저녁 수영</div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="보기 선택">
+    <button role="tab" id="tab-shop" aria-controls="shop" data-tab="shop">장보기</button>
+    <button role="tab" id="tab-days" aria-controls="days" data-tab="days">날짜별</button>
+    <button role="tab" id="tab-recipes" aria-controls="recipes" data-tab="recipes">레시피</button>
+    <button role="tab" id="tab-thaw" aria-controls="thaw" data-tab="thaw">해동</button>
+  </nav>
+
+  <section class="panel" id="shop" role="tabpanel" aria-labelledby="tab-shop"></section>
+  <section class="panel" id="days" role="tabpanel" aria-labelledby="tab-days" hidden></section>
+  <section class="panel" id="recipes" role="tabpanel" aria-labelledby="tab-recipes" hidden></section>
+  <section class="panel" id="thaw" role="tabpanel" aria-labelledby="tab-thaw" hidden></section>
+</div>
+
+<script>
+const SHOP = [
+  {g:"정육 · 사 오면 바로 냉동", items:[
+    ["s-pork","제육용 돼지 앞다리","600g"],["s-mince","돼지 다짐육","1kg"],["s-shabu","샤브용 소고기","400g (200g씩 나눠 얼리기)"]]},
+  {g:"채소", items:[
+    ["s-sprout","숙주","1봉"],["s-cabbage","양배추","1통"],["s-napa","알배추","1통"],["s-onion","양파","5개"],
+    ["s-leek","대파","1단"],["s-garlic","깐마늘 (감바스 편마늘)","1봉"],["s-mgarlic","다진 마늘","작은 통"],
+    ["s-oyster","느타리버섯","2봉"],["s-enoki","팽이버섯","2봉"],["s-sweet","고구마","1봉"]]},
+  {g:"냉장", items:[
+    ["s-tofu","두부 (유통기한 29일 넘는 것)","2모"],["s-milk","우유","1개"],["s-soy","두유","1L"],["s-cheese","슬라이스 치즈","30매"]]},
+  {g:"빵 · 소스 · 기타", items:[
+    ["s-bread","식빵","1봉"],["s-tortilla","또띠아","1봉"],["s-sauce","샤브 소스 (폰즈·땅콩)","각 1"],["s-coin","코인육수","1봉"],
+    ["s-tsuyu","쯔유 (집에 없으면)",""],["s-gim","김가루 또는 후리카케 (집에 없으면)",""],["s-pepper","페페론치노 (있으면)",""],
+    ["s-barley","보리차 티백","1봉"],["s-capsule","네스프레소 캡슐 (오리지널/버츄오 확인)","1박스"]]},
+];
+const LOCAL = [
+  ["l-banana","바나나","아무 때나"],["l-baguette","바게트","25일 (일) 감바스"],["l-bokchoy","청경채","25일 (일) 샤브 키트"],
+  ["l-lettuce","상추","26일 (월) 제육쌈"],["l-noodle","칼국수면","29일 (목) 샤브 마무리"]];
+
+const DAYS = [
+  {d:"2026-10-20",label:"10/20 화",swim:1,b:null,dn:["대패 숙주볶음","r-daepae"],prep:["대패 200g 더 볶아 김치 주먹밥 4개 만들기","r-jumeok"],thaw:"우삼겹 300g"},
+  {d:"2026-10-21",label:"10/21 수",swim:1,b:["대패 김치 주먹밥","r-jumeok"],dn:["우삼겹 규동","r-gyudon"],prep:["규동 2인분 더 만들어 밥과 도시락통에 담기","r-gyudon"],thaw:"닭 정육 1덩어리"},
+  {d:"2026-10-22",label:"10/22 목",swim:1,b:["우삼겹 덮밥 (전자레인지 2분)","r-gyudon"],dn:["닭 간장 양배추볶음","r-chicken"],prep:["한 줌 덜어 또띠아랩 2개 말기","r-wrap"],thaw:"대패 250g · 다짐육 1kg"},
+  {d:"2026-10-23",label:"10/23 금",swim:0,b:["닭 양배추 또띠아랩","r-wrap"],dn:["대패 김치찌개","r-kimchi"],prep:["밥버거 12개 만들어 냉동 (쌀 6컵 새로 짓기)","r-burger"],thaw:"닭 정육 1덩어리"},
+  {d:"2026-10-24",label:"10/24 토",swim:0,b:["프렌치토스트","r-french"],dn:["원팬 닭갈비 (고구마)","r-dakgalbi"],prep:["고구마 에어프라이어에 미리 굽기 (내일 아침용)","r-sweet"],thaw:"우삼겹 200g · 새우 20마리"},
+  {d:"2026-10-25",label:"10/25 일",swim:0,b:["계란 치즈 토스트 + 군고구마","r-toast"],dn:["감바스 + 우삼겹 + 바게트","r-gambas"],prep:["샤브샤브 키트 2통 손질 (동네에서 청경채·바게트 사기)","r-kit"],thaw:"제육용 앞다리 600g"},
+  {d:"2026-10-26",label:"10/26 월",swim:0,b:["냉동 밥버거","r-burger"],dn:["제육볶음 + 상추쌈 (넉넉히)","r-jeyuk"],prep:["제육 절반 덜어 냉장 (28일용) · 동네에서 상추","r-jeyuk"],thaw:"샤브 소고기 200g"},
+  {d:"2026-10-27",label:"10/27 화",swim:1,b:["냉동 밥버거","r-burger"],dn:["샤브샤브 ①","r-shabu"],prep:null,thaw:null},
+  {d:"2026-10-28",label:"10/28 수",swim:1,b:["냉동 밥버거","r-burger"],dn:["제육덮밥 (데우기)","r-jeyuk"],prep:null,thaw:"샤브 소고기 200g"},
+  {d:"2026-10-29",label:"10/29 목",swim:1,b:["냉동 밥버거","r-burger"],dn:["샤브샤브 ② + 칼국수","r-shabu"],prep:["동네에서 칼국수면 사기",null],thaw:"닭 정육 1덩어리"},
+  {d:"2026-10-30",label:"10/30 금",swim:0,b:["냉동 밥버거","r-burger"],dn:["닭볶음탕","r-dakbokk"],prep:null,thaw:"새우 20마리"},
+  {d:"2026-10-31",label:"10/31 토",swim:0,b:["남은 밥버거 2개","r-burger"],dn:["새우 김치볶음밥","r-friedrice"],prep:null,thaw:null},
+];
+
+const RECIPES = [
+  {cat:"저녁"},
+  {id:"r-daepae",n:"대패 숙주볶음",m:"15분 · 2인",ing:["대패삼겹 250g","숙주 1봉","대파 ½대","다진 마늘 1큰술","굴소스 1.5큰술","간장 ½큰술","후추"],
+   s:["팬에 대패를 바싹 굽고, 나온 기름은 키친타월로 반쯤 닦아요.","다진 마늘과 송송 썬 대파를 넣고 30초 볶아요.","숙주를 넣고 센 불에서 굴소스·간장을 둘러 1분만 볶아요. 오래 볶으면 물이 생겨요.","후추를 뿌려 마무리해요."],
+   tip:"주먹밥용 대패 200g은 같은 팬에 먼저 따로 볶아 덜어 두세요."},
+  {id:"r-gyudon",n:"우삼겹 규동 (4인분: 저녁 2 + 도시락 2)",m:"15분",ing:["우삼겹 300g","양파 1개","대파 ½대","물 200ml","쯔유 4큰술","설탕 1큰술","밥 4공기"],
+   s:["양파는 채 썰고 냄비에 물·쯔유·설탕과 함께 3분 끓여요.","우삼겹을 펼쳐 넣고 붉은 기가 없어질 때까지 2~3분 익혀요.","대파를 넣고 불을 꺼요.","2인분은 바로 밥에 얹고, 2인분은 밥과 함께 도시락통에 담아 식혀서 냉장해요."],
+   tip:"아침에 전자레인지 2분. 국물을 넉넉히 담아야 밥이 안 말라요."},
+  {id:"r-chicken",n:"닭 간장 양배추볶음",m:"20분 · 2인 + 랩용",ing:["닭 정육 1덩어리","양배추 ¼통","양파 ½개","간장 3큰술","설탕 1큰술","맛술 1큰술","다진 마늘 1큰술","물 3큰술"],
+   s:["닭은 한입 크기로 자르고 껍질 쪽부터 노릇하게 구워요.","양파와 양배추를 큼직하게 썰어 넣고 2분 볶아요.","간장·설탕·맛술·마늘·물을 섞어 붓고 국물이 자작해질 때까지 졸여요."],
+   tip:"다 되면 한 줌을 덜어 또띠아랩용으로 식혀 두세요."},
+  {id:"r-kimchi",n:"대패 김치찌개",m:"20분 · 2인",ing:["대패삼겹 250g","김치 2컵","두부 ½모","대파 ½대","물 600ml (또는 코인육수 1알)","고춧가루 1큰술","다진 마늘 ½큰술"],
+   s:["냄비에 대패와 김치를 넣고 김치가 투명해질 때까지 볶아요.","물과 코인육수, 고춧가루, 마늘을 넣고 10분 끓여요.","두부와 대파를 넣고 3분 더 끓여요."]},
+  {id:"r-dakgalbi",n:"원팬 닭갈비",m:"25분 · 2인",ing:["닭 정육 1덩어리","양배추 ¼통","양파 ½개","고구마 1개","대파 ½대","고추장 2큰술","간장 2큰술","설탕 1큰술","고춧가루 1큰술","다진 마늘 1큰술"],
+   s:["닭을 한입 크기로 잘라 양념에 버무려요.","팬 바닥에 양배추·양파·얇게 썬 고구마를 깔고 닭을 올려요.","뚜껑을 덮고 중불에서 12분, 뚜껑을 열고 섞어가며 5분 더 볶아요."],
+   tip:"남은 양념에 밥 1공기 볶으면 볶음밥까지 돼요."},
+  {id:"r-gambas",n:"감바스 + 우삼겹 구이",m:"20분 · 2인",ing:["새우 20마리 (해동)","깐마늘 15쪽 (편으로)","올리브유 150ml","페페론치노 4개 (없으면 청양고추 1개)","느타리 ½봉","소금·후추","우삼겹 200g","바게트"],
+   s:["새우는 물기를 꼭 닦고 소금·후추를 살짝 뿌려요.","작은 팬에 올리브유와 편마늘을 넣고 약불에서 마늘이 노릇해질 때까지 5분 끓여요.","페페론치노, 새우, 버섯을 넣고 새우가 붉어질 때까지 3분 익혀요.","옆 팬에 우삼겹을 굽고, 바게트는 마늘 기름에 찍어 먹어요."]},
+  {id:"r-jeyuk",n:"제육볶음 (4인분: 26일 + 28일)",m:"25분",ing:["돼지 앞다리 600g","양파 1개","대파 1대","고추장 3큰술","고춧가루 2큰술","간장 3큰술","설탕 2큰술","다진 마늘 1큰술","참기름 1큰술","상추 (26일 동네)"],
+   s:["고기에 양념을 모두 넣고 10분 재워요.","팬에 고기를 펼쳐 넣고 센 불에서 익을 때까지 볶아요.","양파·대파를 넣고 3분 더 볶아요.","절반은 바로 상추쌈으로, 절반은 식혀서 통에 담아 냉장해요."],
+   tip:"28일에는 팬이나 전자레인지에 데워 밥에 얹으면 제육덮밥이에요."},
+  {id:"r-kit",n:"샤브샤브 키트 손질 (25일)",m:"30분 · 2통",ing:["알배추 ½통","청경채 1봉","팽이 2봉","느타리 1봉","대파 1대","두부 1모","코인육수","샤브 소스"],
+   s:["알배추는 4cm, 대파는 어슷하게, 버섯은 밑동만 떼어 찢어요.","채소와 두부 ½모씩을 밀폐통 2개에 똑같이 나눠 담아요.","코인육수 2알과 소스를 통 위에 붙여 냉장해요. 4일까지 괜찮아요.","고기는 냉동 그대로 두고, 먹기 전날 밤 냉장실로 옮겨요."]},
+  {id:"r-shabu",n:"샤브샤브",m:"10분 · 2인",ing:["샤브 키트 1통","샤브 소고기 200g (해동)","물 1L","코인육수 2알","폰즈·땅콩 소스","칼국수면 1인분 (29일만)"],
+   s:["냄비에 물과 코인육수를 넣고 끓여요.","키트의 채소와 두부를 넣고 2분 끓여요.","고기를 한 장씩 넣어 살짝 익히면서 소스에 찍어 먹어요.","29일엔 남은 국물에 칼국수면을 넣고 4분 끓여 마무리해요."]},
+  {id:"r-dakbokk",n:"닭볶음탕",m:"30분 · 2인",ing:["닭 정육 1덩어리","양파 1개","대파 1대","남은 고구마나 버섯","물 500ml","고추장 2큰술","고춧가루 2큰술","간장 3큰술","설탕 1큰술","다진 마늘 1큰술"],
+   s:["닭을 큼직하게 잘라 냄비에 물과 양념을 모두 넣고 끓여요.","끓어오르면 양파와 고구마(또는 버섯)를 넣고 중불에서 20분 졸여요.","대파를 넣고 2분 더 끓여요."]},
+  {id:"r-friedrice",n:"새우 김치볶음밥",m:"15분 · 2인",ing:["새우 20마리 (해동)","김치 1컵","밥 2공기","대파 ½대","굴소스 ½큰술","참기름 1큰술","계란 2개"],
+   s:["대파로 파기름을 내고 새우를 볶아요.","잘게 썬 김치를 넣고 2분 볶아요.","밥과 굴소스를 넣고 고루 볶은 뒤 참기름을 둘러요.","계란프라이를 올려요."]},
+  {cat:"아침 · 밀프랩"},
+  {id:"r-burger",n:"냉동 밥버거 12개",m:"40분 · 23일(금)",ing:["돼지 다짐육 1kg","양파 1½개 (다지기)","간장 4.5큰술","설탕 2큰술","다진 마늘 1.5큰술","계란 9개","슬라이스 치즈 12장","밥 1.8kg (쌀 약 6컵)","참기름 3큰술","김가루 45g","소금 ¾작은술"],
+   s:["다짐육과 양파를 물기 없어질 때까지 볶고 간장·설탕·마늘을 넣어 국물 없이 졸여요.","팬을 닦고 계란을 풀어 보슬보슬하게 완전히 익혀요.","갓 지은 밥에 참기름·김가루·소금을 섞어 살짝 식혀요.","랩 깐 밥공기에 밥 70g → 치즈 → 고기 → 계란 → 밥 70g 순서로 담고 랩째 꾹 눌러 모양을 잡아요.","하나씩 랩으로 싸서 완전히 식힌 뒤 지퍼백에 모아 냉동해요. 2주 보관."],
+   tip:"아침: 랩을 살짝 벌려 전자레인지 2분~2분 30초. 전날 밤 냉장실로 옮기면 1분."},
+  {id:"r-jumeok",n:"대패 김치 주먹밥 4개",m:"10분 · 20일 밤",ing:["대패삼겹 200g","김치 1컵","밥 2공기","김가루 한 줌","참기름 1큰술"],
+   s:["대패를 잘게 썰어 볶다가 다진 김치를 넣고 2분 더 볶아요.","밥·김가루·참기름과 섞어 4개로 뭉쳐요.","랩으로 싸서 냉장. 아침에 전자레인지 40초."]},
+  {id:"r-wrap",n:"닭 양배추 또띠아랩 2개",m:"5분 · 22일 밤",ing:["닭 간장볶음 한 줌","양배추 채 한 줌","슬라이스 치즈 2장","또띠아 2장"],
+   s:["또띠아에 치즈, 양배추, 닭을 올리고 양옆을 접어 돌돌 말아요.","랩으로 단단히 싸서 냉장해요.","아침에 전자레인지 40초, 또는 마른 팬에 앞뒤 1분."]},
+  {id:"r-french",n:"프렌치토스트",m:"10분 · 2인",ing:["식빵 4장","계란 3개","우유 100ml","설탕 1큰술","소금 한 꼬집","버터나 식용유"],
+   s:["계란·우유·설탕·소금을 섞어요.","식빵을 앞뒤로 충분히 적셔요.","약불에 버터를 녹이고 앞뒤 2분씩 노릇하게 구워요."]},
+  {id:"r-toast",n:"계란 치즈 토스트",m:"7분 · 2인",ing:["식빵 4장","계란 2개","슬라이스 치즈 2장"],
+   s:["식빵을 굽고 계란프라이를 해요.","식빵 위에 치즈, 계란을 올리고 한 장으로 덮어요."]},
+  {id:"r-sweet",n:"군고구마 (에어프라이어)",m:"40분",ing:["고구마 2~3개"],
+   s:["씻어서 물기를 닦아요.","에어프라이어 200℃에서 40분, 중간에 한 번 뒤집어요.","식혀서 냉장해 두면 아침에 전자레인지 1분."]},
+];
+
+const KEY="jia-oct-mealplan-v1";
+let state={};
+try{state=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(e){state={}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function cb(id,text,qty){return `<label class="check"><input type="checkbox" id="${id}" data-k="${id}" ${state[id]?"checked":""}><span class="t">${esc(text)}</span>${qty?`<span class="q">${esc(qty)}</span>`:""}</label>`}
+
+const todayStr=(()=>{const t=new Date();return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0")})();
+
+function renderShop(){
+  const all=[...SHOP.flatMap(g=>g.items.map(i=>i[0])),...LOCAL.map(i=>i[0])];
+  let h=`<div class="progress"><span id="shopCount"></span><div class="bar"><i id="shopBar"></i></div></div>
+  <p class="note">오늘 저녁 마트 · 예상 10~12만원 (캡슐커피 제외) · <b>다이소카드</b>로 결제. 김치·굴소스·참기름·올리브유·계란은 집에 있어요.</p>`;
+  SHOP.forEach(g=>{h+=`<div class="group"><h3>${esc(g.g)}</h3>${g.items.map(i=>cb(i[0],i[1],i[2])).join("")}</div>`});
+  h+=`<h2>동네에서 그때그때</h2><div class="group">${LOCAL.map(i=>cb(i[0],i[1],i[2])).join("")}</div>
+  <button class="reset" data-reset="s-,l-">장보기 체크 모두 지우기</button>`;
+  document.getElementById("shop").innerHTML=h;
+  const upd=()=>{const n=all.filter(k=>state[k]).length;document.getElementById("shopCount").textContent=`${n} / ${all.length} 담음`;document.getElementById("shopBar").style.width=(n/all.length*100)+"%"};
+  upd();document.getElementById("shop").addEventListener("change",upd);
+}
+
+function link(x){return x?(x[1]?`<a href="#${x[1]}" data-recipe="${x[1]}">${esc(x[0])}</a>`:esc(x[0])):"—"}
+function renderDays(){
+  let h=`<p class="note">노란 테두리가 오늘이에요. 메뉴를 누르면 레시피로 가요.</p>`;
+  DAYS.forEach((d,i)=>{
+    const isT=d.d===todayStr, past=d.d<todayStr;
+    h+=`<article class="day${isT?" is-today":""}${past?" past":""}" id="day-${d.d}">
+      <div class="head"><span class="date">${d.label}</span>${isT?'<span class="pill today">오늘</span>':""}${d.swim?'<span class="pill swim">⚡ 수영</span>':""}</div>
+      <div class="row"><span class="k">아침</span><span>${link(d.b)}</span></div>
+      <div class="row"><span class="k">저녁</span><span>${link(d.dn)}</span></div>
+      ${d.prep?`<div class="task prep">${cb("p-"+d.d,"할 일 · "+d.prep[0])}</div>`:""}
+      ${d.thaw?`<div class="task thaw">${cb("t-"+d.d,"자기 전 해동 · "+d.thaw)}</div>`:""}
+    </article>`;
+  });
+  document.getElementById("days").innerHTML=h;
+}
+
+function renderRecipes(){
+  let h="";
+  RECIPES.forEach(r=>{
+    if(r.cat){h+=`<div class="cat">${esc(r.cat)}</div>`;return}
+    h+=`<details class="recipe" id="${r.id}"><summary><span class="nm">${esc(r.n)}</span><span class="meta">${esc(r.m)}</span></summary>
+      <div class="body"><div class="ing">${r.ing.map(x=>`<span>${esc(x)}</span>`).join("")}</div>
+      <ol class="steps">${r.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>${r.tip?`<div class="tip">💡 ${esc(r.tip)}</div>`:""}</div></details>`;
+  });
+  document.getElementById("recipes").innerHTML=h;
+}
+
+function renderThaw(){
+  const list=DAYS.filter(d=>d.thaw);
+  let h=`<p class="note">자기 전에 냉동실 → 냉장실로 옮기기. 다음 날 그대로 요리하면 돼요.</p><div class="group">`;
+  list.forEach(d=>{
+    const next=DAYS[DAYS.indexOf(d)+1];
+    h+=cb("t-"+d.d,`${d.label} 밤 · ${d.thaw}`,next?`→ ${next.label.split(" ")[0]} ${next.dn[0]}`:"");
+  });
+  h+=`</div><button class="reset" data-reset="t-,p-">해동·할 일 체크 모두 지우기</button>`;
+  document.getElementById("thaw").innerHTML=h;
+}
+
+renderShop();renderDays();renderRecipes();renderThaw();
+
+document.addEventListener("change",e=>{
+  const k=e.target.dataset&&e.target.dataset.k;if(!k)return;
+  state[k]=e.target.checked;save();
+  document.querySelectorAll(`[data-k="${k}"]`).forEach(el=>{el.checked=e.target.checked});
+});
+
+document.addEventListener("click",e=>{
+  const r=e.target.closest(".reset");
+  if(r){
+    if(!r.classList.contains("armed")){r.classList.add("armed");r.dataset.label=r.textContent;r.textContent="한 번 더 누르면 지워져요";setTimeout(()=>{r.classList.remove("armed");r.textContent=r.dataset.label},3000);return}
+    const pre=r.dataset.reset.split(",");Object.keys(state).forEach(k=>{if(pre.some(p=>k.startsWith(p)))delete state[k]});save();
+    renderShop();renderDays();renderThaw();show(current);return;
+  }
+  const a=e.target.closest("[data-recipe]");
+  if(a){e.preventDefault();openRecipe(a.dataset.recipe)}
+});
+
+let current="shop";
+function show(t){
+  current=t;
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t?"true":"false"));
+  document.querySelectorAll("section.panel").forEach(s=>{s.hidden=s.id!==t});
+  try{localStorage.setItem(KEY+"-tab",t)}catch(e){}
+}
+function openRecipe(id){
+  show("recipes");const el=document.getElementById(id);if(!el)return;
+  el.open=true;el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
+}
+document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>{
+  show(b.dataset.tab);window.scrollTo({top:0});
+  if(b.dataset.tab==="days"){const t=document.getElementById("day-"+todayStr);if(t)t.scrollIntoView({block:"start"})}
+}));
+
+(function init(){
+  const h=(location.hash||"").slice(1);
+  if(["shop","days","recipes","thaw"].includes(h)){show(h);return}
+  if(h.startsWith("r-")&&document.getElementById(h)){openRecipe(h);return}
+  let saved=null;try{saved=localStorage.getItem(KEY+"-tab")}catch(e){}
+  show(saved||(todayStr<="2026-10-20"?"shop":"days"));
+})();
+</script>
+
+</body></html>
