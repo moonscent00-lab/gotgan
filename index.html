@@ -94,8 +94,9 @@ html,body{overflow-x:hidden;max-width:100%}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-end;justify-content:center;z-index:20}
 #modal.on{display:flex}
 #modal .sheet{background:var(--card);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
-body.viewer #view button:disabled{display:none}
-body.viewer #view select:disabled,body.viewer #view input:disabled{opacity:1;color:var(--ink);-webkit-text-fill-color:var(--ink);appearance:none;-webkit-appearance:none;background:transparent;border-color:transparent;pointer-events:none}
+body.viewer #view button:disabled{visibility:hidden}
+body.viewer #view .tx button:disabled,body.viewer #view .card>.row>button:disabled{display:none}
+body.viewer #view select:disabled,body.viewer #view input:disabled,body.viewer #view textarea:disabled{opacity:1!important;color:var(--ink)!important;-webkit-text-fill-color:var(--ink)!important;appearance:none!important;-webkit-appearance:none!important;background:transparent!important;border-color:transparent!important;pointer-events:none;padding-left:0!important}
 body.viewer .viewer-hide{display:none!important}
 #tip{position:fixed;z-index:40;pointer-events:none;background:var(--ink);color:var(--bg);font-size:13px;padding:6px 9px;border-radius:8px;opacity:0;transition:opacity .1s;white-space:nowrap}
 #tip.on{opacity:1}
@@ -580,7 +581,7 @@ function lockView(){
   if(S.owner || S.tab==='food') return;
   $('view').querySelectorAll('input,select,textarea,button').forEach(el=>{
     if(el.hasAttribute('data-view') || el.closest('.chips') || el.closest('summary')) return;
-    el.disabled=true;
+    el.disabled=true; if('placeholder' in el) el.placeholder='';
   });
 }
 new MutationObserver(()=>lockView()).observe(document.getElementById('view'),{childList:true,subtree:false});
