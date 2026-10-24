@@ -139,16 +139,17 @@ table.mini td:last-child{text-align:right}
 <!-- ===== 핵심 규칙 (분류·엑셀 읽기) ===== -->
 <script id="core">
 const CATS = [
-  {name:'① 고정비', group:'지출', subs:['대출-사업','대출-지아','통신','공과금','구독','차량','건보/연금','기부','종수 카드값']},
+  {name:'① 고정비', group:'지출', subs:['대출-사업','대출-지아','통신','공과금','구독','주차','건보/연금','기부','종수 카드값']},
   {name:'② 보험료', group:'지출', subs:['지아 보험','종수 보험','기타 보험']},
   {name:'④ 생활비', group:'지출', subs:['식재료','생활용품','반려동물','외식/배달']},
   {name:'⑤ 데이트·힐링', group:'지출', subs:['데이트','여행']},
   {name:'⑥ 종수 용돈', group:'지출', subs:['용돈']},
-  {name:'⑦ 지아 용돈', group:'지출', subs:['용돈']},
+  {name:'⑦ 지아 용돈', group:'지출', subs:['용돈','기부']},
   {name:'⑧ 건강', group:'지출', subs:['병원·약','헤모힘','운동']},
   {name:'⑨ 엄마', group:'지출', subs:['용돈','선물','보험','CCTV','헤모힘']},
   {name:'⑩ 시부모님', group:'지출', subs:['용돈','선물','헤모힘']},
   {name:'⑪ 비정기', group:'지출', subs:['경조사','가전·가구','큰 수리비']},
+  {name:'⑫ 차량·교통', group:'지출', subs:['기름값','하이패스','기차·버스','차량 수리']},
   {name:'빌린 돈 갚기', group:'지출', subs:['엄마','시어머니']},
   {name:'③ 저축', group:'저축', subs:['달러종신','적금','저금통','투자','비상금']},
   {name:'생활비 받음', group:'수입', subs:['종수 생활비']},
@@ -189,12 +190,15 @@ function treatmentOf(cat, row){
   if(cat.startsWith('🚫')) return 'exclude';
   if(INCOME_CATS.has(cat)) return 'income';
   if(ENV[cat] && ENV[cat].test(row.method||'')) return 'envelope';
+  if(cat==='⑦ 지아 용돈' && row.subcategory==='기부') return 'envelope';   // 용돈 안에서 내는 기부금
   return 'count';
 }
 const R = (category, subcategory='', extra={}) => ({category, subcategory, ...extra});
 const realMinor = m => { const s=String(m??'').trim(); return s && s!=='미분류' ? s : ''; };
 
+const NO_MEMORY = /ATOMY|애터미/i;   // 같은 가게라도 매번 용도가 달라서 기억하지 않음
 function classify(row, rules){
+  if(NO_MEMORY.test(row.merchant||'')) rules=[];
   const r1 = rules.find(r=>r.match_field==='merchant' && r.match_value===row.merchant);
   if(r1) return R(r1.category, r1.subcategory||'');
   const r2 = rules.find(r=>r.match_field==='method' && r.match_value===row.method);
@@ -223,6 +227,7 @@ function classify(row, rules){
   }
   if(maj==='내통장끼리') return R('🚫 내 통장끼리', pickSub('🚫 내 통장끼리',min));
   if(maj==='사업이체') return R('🚫 사업 이체', pickSub('🚫 사업 이체',min));
+  if(NO_MEMORY.test(name) && t!=='수입') return R(REVIEW);
   const direct = CATS.find(c=>c.name!==REVIEW && norm(c.name)===maj);
   if(direct){
     const okType = t==='수입' ? (INCOME_CATS.has(direct.name)||direct.name.startsWith('🚫'))
@@ -239,7 +244,7 @@ function classify(row, rules){
       return R('🚫 카드대금', sub);
     }
     if(/원리금/.test(name) && /IBK|기업/.test(m)) return R('① 고정비','대출-지아');
-    if(/굿네이버스|월드비전|유니세프|세이브더칠드런|기부/.test(name)) return R('① 고정비','기부');
+    if(/굿네이버스|월드비전|유니세프|세이브더칠드런|기부/.test(name)) return R('⑦ 지아 용돈','기부');
     if(/CLAUDE|ANTHROPIC|네이버플러스|넷플릭스|유튜브|YOUTUBE|쿠팡와우|구독/i.test(name)) return R('① 고정비','구독');
     if(/달러종신|종신/.test(name)) return R('③ 저축','달러종신');
     if(/^\d{1,2}월\s*보험료$/.test(name)) return R('⑨ 엄마','보험');
@@ -289,7 +294,7 @@ function classify(row, rules){
   // ── 지출: 결제수단 기본값 ──
   if(/토스뱅크\s*(체크카드|통장)/.test(m)) return R('⑦ 지아 용돈','용돈');
   if(/모임\s*체크카드/.test(m)) return R('⑤ 데이트·힐링', maj==='여행/숙박'?'여행':'데이트');
-  if(/애터미/.test(m)) return R('🚫 사업비','애터미 영업용');
+  if(/애터미/.test(m) || /ATOMY|애터미/i.test(name)) return R(REVIEW);   // 애터미는 집 물건·대납·영업용이 섞여서 매번 확인
   if(/다이소/.test(m)){
     if(/식재료|식비/.test(maj)) return R('④ 생활비','식재료');
     if(/외식|카페|간식/.test(maj)) return R('④ 생활비','외식/배달');
@@ -303,7 +308,10 @@ function classify(row, rules){
   if(/반려/.test(maj)) return R('④ 생활비','반려동물');
   if(/주거|통신/.test(maj)) return R('① 고정비','통신');
   if(maj==='대출') return R('① 고정비','대출-사업');
-  if(/자동차|교통|주유/.test(maj)) return R('① 고정비','차량');
+  if(/하이패스|도로공사/.test(name)) return R('⑫ 차량·교통','하이패스');
+  if(/주유|오일|에너지|SK에너지|GS칼텍스|S-OIL|현대오일/i.test(name) || /주유/.test(maj)) return R('⑫ 차량·교통','기름값');
+  if(/철도|코레일|SRT|티머니|고속버스|시외버스|버스/.test(name)) return R('⑫ 차량·교통','기차·버스');
+  if(/자동차|교통/.test(maj)) return R('⑫ 차량·교통','');
   if(maj==='보험') return R('② 보험료','');
   if(/의료|건강|병원/.test(maj)) return R('⑧ 건강','병원·약');
   if(maj==='경조사') return R('⑪ 비정기','경조사');
@@ -604,7 +612,7 @@ async function changeCat(id, cat){
   }
   if(!await saveTx(r, patch)) return;
   let n=0;
-  if(S.remember && r.merchant && !r.parent_id){
+  if(S.remember && r.merchant && !r.parent_id && !NO_MEMORY.test(r.merchant)){
     await sb.from('rules').upsert({match_field:'merchant', match_value:r.merchant, category:cat, subcategory:''},{onConflict:'match_field,match_value'});
     const ru=S.rules.find(x=>x.match_field==='merchant'&&x.match_value===r.merchant);
     if(ru){ ru.category=cat; ru.subcategory=''; } else S.rules.push({match_field:'merchant',match_value:r.merchant,category:cat,subcategory:''});
@@ -616,7 +624,7 @@ async function changeCat(id, cat){
 }
 async function changeSub(id, sub){
   const r=findTx(id); if(!await saveTx(r,{subcategory:sub})) return;
-  if(S.remember && r.merchant && !r.parent_id){
+  if(S.remember && r.merchant && !r.parent_id && !NO_MEMORY.test(r.merchant)){
     await sb.from('rules').upsert({match_field:'merchant', match_value:r.merchant, category:r.category, subcategory:sub},{onConflict:'match_field,match_value'});
     const ru=S.rules.find(x=>x.match_field==='merchant'&&x.match_value===r.merchant); if(ru) ru.subcategory=sub;
   }
@@ -698,8 +706,6 @@ const BUDGET_TEMPLATE = [
   ['① 고정비','핸드폰(지아 SKT 세컨)',29250,'KB국민카드','1년 유지'],
   ['① 고정비','핸드폰(지아 SKT eSIM)',0,'KB국민카드','금액 확인 필요'],
   ['① 고정비','핸드폰(KT M모바일)',2890,'KB국민카드','아빠 번호 유지'],
-  ['① 고정비','소나타 기름값',200000,'KB국민카드',''],
-  ['① 고정비','하이패스',100000,'삼성하이패스카드',''],
   ['① 고정비','클로드',30000,'KB국민카드',''],
   ['① 고정비','네이버플러스',4900,'KB국민카드',''],
   ['① 고정비','굿네이버스',40000,'네이버페이','기부'],
@@ -713,9 +719,13 @@ const BUDGET_TEMPLATE = [
   ['② 보험료','종수 개인보험',215796,'국민은행 통장','라이나·한화·삼성화재·DB운전자'],
   ['③ 저축','달러종신',500000,'국민은행 통장','2,100달러'],
   ['④ 생활비','식재료',250000,'다이소카드',''],
+  ['④ 생활비','생활용품',50000,'하나카드(애터미)','세제·화장지 등 · 10만원 넘는 큰 물건은 ⑪ 비정기'],
   ['④ 생활비','반려동물(미용·구충제)',80000,'다이소카드',''],
   ['④ 생활비','외식/배달',100000,'다이소카드','남으면 이월'],
   ['⑤ 데이트·힐링','데이트',200000,'모임통장 이체','남으면 여행자금'],
+  ['⑫ 차량·교통','소나타 기름값',200000,'KB국민카드','달마다 다름 · 3개월 평균 보고 조정'],
+  ['⑫ 차량·교통','하이패스',100000,'삼성하이패스카드','달마다 다름'],
+  ['⑫ 차량·교통','기차·버스',30000,'','가족 행사 때문에 간 건 ⑪ 경조사로'],
   ['⑥ 종수 용돈','용돈',500000,'종수 계좌 이체','밥값·오토바이 기름값·재량비 포함 · 1일'],
   ['⑦ 지아 용돈','용돈',140000,'토스뱅크 이체','점심·대중교통·재량비·보험팀 회비'],
   ['⑧ 건강','영양제',200000,'하나카드(애터미)','PV 수당 반영'],
