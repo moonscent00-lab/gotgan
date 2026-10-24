@@ -537,6 +537,7 @@ async function boot(){
   const {data:{session}} = await sb.auth.getSession();
   if(!session){ $('login').hidden=false; $('app').hidden=true; return; }
   $('login').hidden=true; $('app').hidden=false;
+  S.me = session.user?.email || ''; S.owner = S.me==='moonscent00@gmail.com';   // 지아만 고치기·올리기 가능, 종수는 보기만
   S.month = thisMonth(); $('month').value=S.month;
   await loadAll(); go(S.tab);
 }
@@ -611,14 +612,15 @@ function renderSettle(){
     return `<div class="catline" style="cursor:pointer" onclick="openCat('${c}')"><div class="row between"><span>${esc(c)} ›</span><span class="num">${won(used)}${bud?` <span class="muted">/ ${won(bud)}</span>`:''}</span></div>
       ${bud?`<div class="bar"><i class="${used>bud?'over':''}" style="width:${pct}%"></i></div>`:''}</div>`;
   }).join('') || '<p class="muted">아직 지출 내역이 없어요.</p>';
-  const envHtml = Object.keys(ENV).map(c=>{ const e=s.env[c]||{funded:0,used:0,other:0}; const left=e.funded-e.used;
+  const envHtml = Object.keys(ENV).filter(c=>S.owner || c!=='⑦ 지아 용돈').map(c=>{ const e=s.env[c]||{funded:0,used:0,other:0}; const left=e.funded-e.used;
     return `<div class="catline"><div class="row between"><span>${esc(c)}</span><span class="num ${left<0?'':'plus'}">${left<0?'초과 ':'남음 '}${won(Math.abs(left))}</span></div>
     <div class="muted">넣은 돈 ${won(e.funded)} · 봉투 카드로 쓴 돈 ${won(e.used)}</div>${e.noFund?`<div class="alert warn" style="margin-top:6px">이번 달 봉투에 넣은 이체가 안 보여요. 뱅크샐러드에서 그 이체를 <b>가족송금</b>으로 해주세요. 그 전까지는 쓴 돈을 지출로 대신 셌어요.</div>`:''}${e.other?`<div class="muted">+ 다른 카드로 낸 ${esc(c.slice(2))} ${won(e.other)} (봉투 밖 지출)</div>`:''}</div>`; }).join('');
   $('view').innerHTML = `
     <div class="card">
       <div class="row between"><h2>${S.month.replace('-','년 ')}월 정산</h2>${S.settled?'<span class="tag env">정산 완료</span>':''}</div>
-      <div class="drop" onclick="$('file').click()">📥 뱅크샐러드 엑셀 올리기<br><span class="muted">일주일에 한 번 올려도 돼요. 새로 생긴 내역만 가져와요</span></div>
-      ${S.tx.length?`<div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn small" onclick="reclassify()">🔄 뱅크샐러드 분류로 다시 맞추기</button><button class="btn small" style="color:var(--red)" onclick="wipeMonth()">🗑 이 달 내역 지우기</button></div>`:''}
+      ${S.owner?'':'<div class="alert ok" style="margin-bottom:8px">👀 보기 전용이에요. 지아 용돈은 보낸 금액만 보여요.</div>'}
+      <div class="drop" ${S.owner?'':'hidden'} onclick="$('file').click()">📥 뱅크샐러드 엑셀 올리기<br><span class="muted">일주일에 한 번 올려도 돼요. 새로 생긴 내역만 가져와요</span></div>
+      ${S.tx.length&&S.owner?`<div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn small" onclick="reclassify()">🔄 뱅크샐러드 분류로 다시 맞추기</button><button class="btn small" style="color:var(--red)" onclick="wipeMonth()">🗑 이 달 내역 지우기</button></div>`:''}
       ${s.review?`<div class="alert warn" onclick="S.filter='review';go('ledger')" style="cursor:pointer">❓ 분류가 필요한 내역이 <b>${s.review}건</b> 있어요 → 눌러서 정리하기</div>`:(S.tx.length?'<div class="alert ok">✓ 모든 내역이 분류됐어요</div>':'')}
     </div>
     <div class="card">
