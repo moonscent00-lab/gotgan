@@ -521,6 +521,7 @@ const S = { tab:'settle', month:'', tx:[], rules:[], budgets:[], loans:[], debtR
   fridge:[], meals:[], shop:[], foodTab:'plan', page:null };
 const $ = id => document.getElementById(id);
 const won = n => (Math.round(n)||0).toLocaleString('ko-KR')+'원';
+const comma = v => { const d=String(v??'').replace(/[^\d]/g,''); return d?Number(d).toLocaleString('ko-KR'):''; };
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600); }
 function thisMonth(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
@@ -1008,10 +1009,10 @@ function renderLoans(){
       <div class="row between"><input value="${esc(l.name)}" onchange="saveLoan('${l.id}','name',this.value)" style="font-size:17px;font-weight:700;border:none;background:none;flex:1;min-width:0">
       <label class="muted row" style="gap:4px"><input type="checkbox" ${l.active?'checked':''} onchange="saveLoan('${l.id}','active',this.checked)">상환중</label></div>
       <div class="grid2">
-        <label class="field">월 납입액<input inputmode="numeric" value="${l.monthly_amount??''}" onchange="saveLoan('${l.id}','monthly_amount',this.value)"></label>
+        <label class="field">월 납입액<input inputmode="numeric" value="${comma(l.monthly_amount)}" oninput="this.value=comma(this.value)" onchange="saveLoan('${l.id}','monthly_amount',this.value)"></label>
         <label class="field">납입일<input inputmode="numeric" value="${l.pay_day??''}" onchange="saveLoan('${l.id}','pay_day',this.value)"></label>
         <label class="field">금리(%)<input inputmode="decimal" value="${l.rate??''}" onchange="saveLoan('${l.id}','rate',this.value)"></label>
-        <label class="field">남은 원금<input inputmode="numeric" value="${l.balance??''}" onchange="saveLoan('${l.id}','balance',this.value)"></label>
+        <label class="field">남은 원금<input inputmode="numeric" value="${comma(l.balance)}" oninput="this.value=comma(this.value)" onchange="saveLoan('${l.id}','balance',this.value)"></label>
         <label class="field">구분<select onchange="saveLoan('${l.id}','kind',this.value)">${['사업대출','지아대출','기타'].map(k=>`<option ${l.kind===k?'selected':''}>${k}</option>`).join('')}</select></label>
         <label class="field">거치 끝나는 날<input type="date" value="${l.grace_end??''}" onchange="saveLoan('${l.id}','grace_end',this.value)"></label>
       </div>
