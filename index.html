@@ -257,7 +257,7 @@ function classify(row, rules){
     if(maj==='대납') return R('🚫 대납','',{person: who(inParen || dashWho || beforeParen)});
   }
   if(t==='수입'){
-    if(maj==='대납대금') return R('🚫 대납 환급','',{person: who(beforeParen)});
+    if(maj==='대납대금') return R('🚫 대납 환급','',{person: who(dashWho || beforeParen)});
     if(maj==='빌린돈') return R('🚫 빌린 돈', pickSub('🚫 빌린 돈',min), {person: who(beforeParen)});
     if(maj==='환불') return R('기타수입','환불·환급');
     if(maj==='기타' || maj==='기타수입') return R('기타수입', sub('기타수입', /환불|환급|연회비|취소/.test(name)?'환불·환급':'기타'));
@@ -601,6 +601,13 @@ async function importFile(f){
     let parents=[], children=[];
     for(const m of months){ const b=buildImport(raw, m, S.rules); parents.push(...b.parents); children.push(...b.children); }
     if(!parents.length){ toast('최근 두 달 내역이 파일에 없어요'); return; }
+    // 캡처로 먼저 넣은 건은 엑셀 내역(시간·메모까지 있음)으로 바꿈
+    const sh = await sb.from('transactions').select('id,date,amount,merchant').like('dedupe_key','shot|%').in('month',months);
+    if(!sh.error && sh.data.length){
+      const ex = new Set(parents.map(p=>[p.date,p.amount,shotNorm(p.merchant)].join('|')));
+      const del = sh.data.filter(r=>ex.has([r.date,r.amount,shotNorm(r.merchant)].join('|'))).map(r=>r.id);
+      if(del.length){ await sb.from('transactions').delete().in('parent_id',del); const d=await sb.from('transactions').delete().in('id',del); if(fail(d.error,'캡처 내역 바꾸기')) return; }
+    }
     const a = await sb.from('transactions').upsert(parents,{onConflict:'dedupe_key', ignoreDuplicates:true}).select('id,month');
     if(fail(a.error,'가져오기')) return;
     const added = new Set(a.data.map(r=>r.id));
@@ -613,6 +620,109 @@ async function importFile(f){
     if(a.data.length){ S.filter='new'; go('ledger'); } else render();
     toast(a.data.length ? `새 내역 ${a.data.length}건 — 지금 기억날 때 확인해 주세요` : '새로 들어온 내역이 없어요 (이미 다 올라가 있음)');
   }catch(e){ console.error(e); toast('엑셀을 못 읽었어요: '+e.message); }
+}
+
+// ── 캡처 글자 붙여넣기 (아이폰 "텍스트 인식 표시"로 복사한 글자) ──
+const shotNorm = t => String(t||'').replace(/\s+/g,'').replace(/[()（）]/g,'').toLowerCase();
+const SHOT_DEFAULT = {   // 처음 보는 소분류일 때 기본값 [대분류, 타입]
+  '앱테크':['금융수입','수입'], '이자':['금융수입','수입'], '배당금':['금융수입','수입'], '끼리끼리':['끼리끼리','이체'],
+  '대납':['대납','지출'], '대납대금':['대납대금','수입'], '주차비':['고정비','지출'], '생활용품':['생활비','지출'], '식재료':['생활비','지출'],
+  '외식/배달':['생활비','지출'], '반려동물':['생활비','지출'], '업무용품':['사업비','지출'], '카드대금':['카드대금','이체'], '가족송금':['가족송금','이체'],
+  '대출-사업':['고정비','지출'], '대출-지아':['고정비','지출'], '통신':['고정비','지출'], '공과금':['고정비','지출'], '구독료':['고정비','지출'], '기타':['기타','수입'], '환불':['환불','수입']
+};
+const SHOT_UI = /^(가계부|목록|달력|필터|홈|자산|건강보험|금융쇼핑|검색|\+|[\d:]{1,5}|오늘|어제)$/;
+let SHOT = {rows:[], hist:null};
+async function openShot(){
+  if(!SHOT.hist){
+    const h = await sb.from('transactions').select('bs_major,bs_minor,type,amount').not('bs_major','is',null).limit(5000);
+    SHOT.hist = {}; SHOT.maj = {};
+    for(const r of h.data||[]){ const mj=String(r.bs_major||'').trim(); if(mj && mj!=='미분류'){ const mk=mj+(r.amount>0?'+':'-'); const o=(SHOT.maj[mk] ||= {}); o[r.type]=(o[r.type]||0)+1; }
+      const k=String(r.bs_minor||'').trim(); if(!k||k==='미분류'||!r.bs_major) continue;
+      const sg=r.amount>0?'+':'-'; const key=k+sg; const m=(SHOT.hist[key] ||= {}); const v=r.bs_major+'|'+r.type; m[v]=(m[v]||0)+1; }
+  }
+  SHOT.rows=[];
+  openModal(`<h2>📋 캡처 글자 붙여넣기</h2>
+    <p class="muted" style="margin:0 0 8px">사진 앱에서 캡처 열기 → 글자 꾹 누르기 → <b>모두 선택 → 복사</b> → 아래에 붙여넣기. 캡처는 한 장씩 해주세요.</p>
+    <textarea id="shotText" rows="7" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:14px" placeholder="여기에 붙여넣기"></textarea>
+    <div class="row" style="gap:6px;margin-top:8px"><button class="btn" style="flex:1" onclick="readShot()">읽기</button><button class="btn small" onclick="closeModal()">닫기</button></div>
+    <div id="shotOut"></div>`);
+}
+function shotGuess(sub, sign){
+  const m = SHOT.hist?.[sub+(sign>0?'+':'-')];
+  if(m){ const [maj,type]=Object.entries(m).sort((a,b)=>b[1]-a[1])[0][0].split('|'); return [maj,type]; }
+  const mj = SHOT.maj?.[sub+(sign>0?'+':'-')]; if(mj) return [sub, Object.entries(mj).sort((a,b)=>b[1]-a[1])[0][0]];   // 소분류 없이 대분류만 보이는 경우
+  const d=SHOT_DEFAULT[sub]; if(d && !(d[1]==='수입' && sign<0)) return d;
+  return ['', sign>0?'수입':'지출'];
+}
+function parseShot(text){
+  const today=new Date(), Y=today.getFullYear(), M=today.getMonth()+1, D=today.getDate();
+  const amtRe=/([+\-−–]?)\s*([\d]{1,3}(?:,\d{3})+|\d+)\s*원/;
+  const metaRe=/^(.+?)\s+[|ㅣIl1丨¦]\s+(.+)$/;
+  const lines=String(text).split(/\r?\n/).map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const secs=[]; let cur=null;
+  for(let ln of lines){
+    const dm = ln.match(/^(\d{1,2})\s*일\s*(오늘|어제|[월화수목금토일]요일)?/);
+    if(dm && (dm[2] || /원/.test(ln) || ln.length<8)){
+      const day=+dm[1]; let y=Y, mo=M; if(day>D){ mo--; if(!mo){mo=12;y--;} }
+      cur={date:`${y}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`, names:[], amts:[], metas:[], tot:0}; secs.push(cur); continue;
+    }
+    if(!cur || SHOT_UI.test(ln)) continue;
+    const mm = ln.match(metaRe);
+    if(mm && !amtRe.test(ln)){ cur.metas.push({sub:mm[1].trim(), method:mm[2].trim()}); continue; }
+    const am = ln.match(amtRe);
+    if(am){
+      const before = ln.slice(0, am.index).trim();
+      const alone = !before || /^[+\-−–]$/.test(before);
+      if(alone && !cur.names.length && !cur.metas.length && cur.tot<2){ cur.tot++; continue; }   // 날짜 옆 그날 합계(+/-)는 건너뜀
+      if(!alone) cur.names.push(before);
+      cur.amts.push({sign: am[1]? (am[1]==='+'?1:-1) : 0, v:+am[2].replace(/,/g,'')});
+      continue;
+    }
+    cur.names.push(ln);
+  }
+  const rows=[], warn=[];
+  for(const sct of secs){
+    const n=Math.min(sct.names.length, sct.amts.length, sct.metas.length);
+    if(sct.names.length!==sct.amts.length || sct.amts.length!==sct.metas.length) warn.push(`${+sct.date.slice(8)}일: 이름 ${sct.names.length} · 금액 ${sct.amts.length} · 분류 ${sct.metas.length}줄 — 짝이 안 맞아서 ${n}건만 읽었어요`);
+    const seen={};
+    for(let i=0;i<n;i++){
+      const {sub, method}=sct.metas[i], a=sct.amts[i], name=sct.names[i];
+      let sign=a.sign; if(!sign){ const h=SHOT.hist||{}; sign = (h[sub+'+'] && !h[sub+'-']) || SHOT_DEFAULT[sub]?.[1]==='수입' ? 1 : -1; }
+      const [maj,type]=shotGuess(sub,sign);
+      const amount=sign*a.v;
+      const base=['shot',sct.date,amount,shotNorm(name),shotNorm(method)].join('|'); seen[base]=(seen[base]||0)+1;
+      const isMinor = !!SHOT.hist?.[sub+(sign>0?'+':'-')] || (maj && maj!==sub);   // 뱅샐 목록은 소분류가 없으면 대분류를 보여줌
+      rows.push({date:sct.date, time:'', type, bs_major:maj||sub, bs_minor:isMinor?sub:'', merchant:name, amount, method, memo:'', _key:base+'|'+seen[base], on:true});
+    }
+  }
+  return {rows, warn};
+}
+function readShot(){
+  const {rows,warn}=parseShot($('shotText').value);
+  SHOT.rows=rows;
+  const have=new Set(S.tx.map(r=>r.dedupe_key));
+  rows.forEach(r=>{ r.dup = have.has(r._key) || S.tx.some(t=>t.date===r.date && t.amount===r.amount && shotNorm(t.merchant)===shotNorm(r.merchant)); if(r.dup) r.on=false; });
+  SHOT.warn=warn; renderShot();
+}
+function renderShot(){
+  const rows=SHOT.rows, warn=SHOT.warn||[];
+  $('shotOut').innerHTML = !rows.length ? `<div class="alert warn" style="margin-top:10px">읽은 내역이 없어요. 날짜 줄(예: "26일 오늘")까지 같이 복사됐는지 확인해 주세요.</div>` : `
+    ${warn.map(w=>`<div class="alert warn" style="margin-top:8px">${esc(w)}</div>`).join('')}
+    <p class="muted" style="margin:10px 0 4px">${rows.length}건 읽었어요. 체크된 것만 저장해요. 이미 있는 건 빼뒀어요.</p>
+    ${rows.map((r,i)=>`<label class="tx" style="display:flex;gap:8px;align-items:flex-start;opacity:${r.dup?.5:1}">
+      <input type="checkbox" ${r.on?'checked':''} onchange="SHOT.rows[${i}].on=this.checked" style="margin-top:4px">
+      <div style="flex:1;min-width:0"><div class="t1"><span>${esc(r.merchant)}</span><span class="num ${r.amount>0?'plus':'minus'}">${r.amount>0?'+':''}${won(r.amount)}</span></div>
+      <div class="t2">${r.date.slice(5).replace('-','/')} · ${esc(r.bs_minor||r.bs_major)} · ${esc(r.method)}${r.dup?' · 이미 있음':''} · <a href="#" onclick="event.preventDefault();flipShot(${i})">부호 바꾸기</a></div></div></label>`).join('')}
+    <button class="btn" style="width:100%;margin-top:10px" onclick="saveShot()">저장하기</button>`;
+}
+function flipShot(i){ const r=SHOT.rows[i]; r.amount=-r.amount; const lab=r.bs_minor||r.bs_major, g=shotGuess(lab, Math.sign(r.amount)); r.bs_major=g[0]||lab; r.type=g[1]; r._key=r._key.replace(/^shot\|([^|]+)\|-?\d+/, (m0,d)=>`shot|${d}|${r.amount}`); renderShot(); }
+async function saveShot(){
+  const pick=SHOT.rows.filter(r=>r.on); if(!pick.length){ toast('저장할 내역을 골라주세요'); return; }
+  const rows=pick.map(({_key,on,dup,...r})=>{ const c=classify(r,S.rules); const p={id:uuid(), month:r.date.slice(0,7), ...r, category:c.category, subcategory:c.subcategory||'', person:c.person||null, dedupe_key:_key, parent_id:null}; p.treatment=treatmentOf(p.category,p); return p; });
+  const a=await sb.from('transactions').upsert(rows,{onConflict:'dedupe_key', ignoreDuplicates:true}).select('id,month');
+  if(fail(a.error,'캡처 저장')) return;
+  S.lastImport=new Set(a.data.map(r=>r.id)); closeModal(); await loadAll(); S.filter='new'; go('ledger');
+  toast(a.data.length?`${a.data.length}건 넣었어요 — 월말에 엑셀 올리면 엑셀 내역으로 바뀌어요`:'이미 다 들어가 있어요');
 }
 
 
@@ -634,6 +744,7 @@ function renderSettle(){
     <div class="card">
       <div class="row between"><h2>${S.month.replace('-','년 ')}월 정산</h2>${S.settled?'<span class="tag env">정산 완료</span>':''}</div>
       <div class="drop" ${S.owner?'':'hidden'} onclick="$('file').click()">📥 뱅크샐러드 엑셀 올리기<br><span class="muted">일주일에 한 번 올려도 돼요. 새로 생긴 내역만 가져와요</span></div>
+      <div class="drop" ${S.owner?'':'hidden'} onclick="openShot()" style="margin-top:8px">📋 캡처 글자 붙여넣기<br><span class="muted">뱅크샐러드 캡처 → 글자 꾹 → 모두 선택 → 복사 → 여기 붙여넣기</span></div>
       ${S.tx.length&&S.owner?`<div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn small" onclick="reclassify()">🔄 뱅크샐러드 분류로 다시 맞추기</button><button class="btn small" style="color:var(--red)" onclick="wipeMonth()">🗑 이 달 내역 지우기</button></div>`:''}
       ${s.review?`<div class="alert warn" onclick="S.filter='review';go('ledger')" style="cursor:pointer">❓ 분류가 필요한 내역이 <b>${s.review}건</b> 있어요 → 눌러서 정리하기</div>`:(S.tx.length?'<div class="alert ok">✓ 모든 내역이 분류됐어요</div>':'')}
     </div>
@@ -773,7 +884,7 @@ function renderLedger(){
     <div class="row between" style="margin-top:10px">
       <div class="row" style="gap:12px;flex-wrap:wrap"><label class="muted row viewer-hide" style="gap:4px"><input type="checkbox" ${S.remember?'checked':''} onchange="S.remember=this.checked"> 바꾼 가게는 기억하기</label>
       ${f==='all'?`<label class="muted row" style="gap:4px"><input data-view type="checkbox" ${S.hideExcluded?'checked':''} onchange="S.hideExcluded=this.checked;renderLedger()"> 통장끼리·카드값 숨기기</label>`:''}</div>
-      <button class="btn small" onclick="openAdd()">＋ 직접 입력</button>
+      <button class="btn small" onclick="openShot()">📋 캡처</button> <button class="btn small" onclick="openAdd()">＋ 직접 입력</button>
     </div>
     ${ordered.map(txHtml).join('') || '<p class="muted" style="margin-top:20px">내역이 없어요. 정산 탭에서 엑셀을 올려주세요.</p>'}`;
 }
