@@ -545,7 +545,18 @@ async function boot(){
   S.me = session.user?.email || ''; S.owner = S.me==='moonscent00@gmail.com'; document.body.classList.toggle('viewer', !S.owner);   // 지아만 고치기·올리기 가능, 종수는 보기만
   S.month = thisMonth(); $('month').value=S.month;
   await loadAll(); go(S.tab);
+  takeShotLink();
 }
+// 아이폰 단축어에서 온 캡처 글자: …/gotgan/#shot=글자 (곳간 탭이 이미 열려 있으면 새로고침 없이 주소만 바뀌어서 hashchange로도 받음)
+async function takeShotLink(){
+  const h=location.hash; if(!h.startsWith('#shot=') || !S.owner) return;
+  let t=''; try{ t=decodeURIComponent(h.slice(6)); }catch(e){ t=h.slice(6); }
+  history.replaceState(null,'',location.pathname+location.search);
+  if(!t.trim()){ toast('단축어에서 글자를 못 받았어요'); return; }
+  await openShot(); $('shotText').value=t; readShot();
+}
+window.addEventListener('hashchange', takeShotLink);
+window.addEventListener('pageshow', e=>{ if(e.persisted) takeShotLink(); });
 async function setMonth(m){ if(!m) return; S.month=m; await loadAll(); render(); }
 
 async function loadAll(){
